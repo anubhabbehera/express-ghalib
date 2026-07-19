@@ -122,10 +122,13 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
   - **8BitDo quirk:** ignores Boot Protocol; only sends a 16-byte **NKRO bitmap**
     report (byte0 = modifiers; byte b≥1, bit p → HID usage (b-1)*8 + p). Decoded
     in `ble_kbd.cpp` incl. shift. Verified: typed text + `!`(shift) + Enter.
-- ⬜ KEY/BOOT buttons → Back/Menu.
+- ✅ KEY/BOOT buttons → Back/Home. KEY (GPIO18) injects Esc (Back); BOOT (GPIO0)
+  jumps to the launcher (Home). Active-low, debounced.
 - ✅ Home-screen app launcher: icon-tile grid (Notes/Calendar/Reminders/Music/
   Settings), arrow-key nav with inverted focus, Enter opens stub app, Esc = back.
   Perf: ST7305 SPI 2→10 MHz (Waveshare-proven) fixed typing lag; font Montserrat 18.
+- **✅ M1 COMPLETE** — pair/bond a BLE keyboard, type into a field, navigate the
+  launcher with arrows/enter/esc, and Back/Home via physical buttons. All verified.
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates

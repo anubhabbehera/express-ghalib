@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <lvgl.h>
 #include "ble_kbd.h"
+#include "buttons.h"
 #include "launcher.h"
 #include "shtc3.h"
 #include "st7305.h"
@@ -298,12 +299,14 @@ void setup() {
 
   display_init();
   input_init();
+  buttons_init();      // physical KEY/BOOT buttons
   launcher_build();    // home-screen app launcher (keyboard-navigated)
   ble_init();          // start NimBLE central scan + auto-connect
 }
 
 void loop() {
   ble_loop();          // drive the BLE connect state machine
+  buttons_poll();      // physical KEY/BOOT buttons
   lv_timer_handler();  // LVGL tick is driven by millis() via LV_TICK_CUSTOM
   delay(5);
 }

@@ -24,3 +24,6 @@ bool ble_connected();
 // Pop the next decoded key as an LVGL key code (LV_KEY_* or an ASCII char).
 // Returns false if the queue is empty. Safe to call from the LVGL task.
 bool ble_kbd_pop(uint32_t* key_out);
+
+// Inject a key into the input queue from another source (e.g. physical buttons).
+void ble_kbd_inject(uint32_t lvgl_key);

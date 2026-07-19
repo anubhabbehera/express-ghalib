@@ -11,3 +11,7 @@
 // Build the launcher on a fresh screen and load it. Tiles are added to the
 // default LVGL group so the keypad indev drives navigation.
 void launcher_build();
+
+// Jump back to the home grid from anywhere (e.g. a physical Home button); frees
+// the current app screen if it isn't the home screen.
+void launcher_go_home();
