@@ -19,3 +19,6 @@ void launcher_go_home();
 // Register a teardown hook the launcher runs (once) when returning home. Apps
 // set this on entry to free their screens/timers safely after home is shown.
 void launcher_set_leave_hook(void (*fn)());
+
+// Update the status-bar Wi-Fi indicator (true once Wi-Fi is set up / synced).
+void launcher_set_wifi_ok(bool ok);
