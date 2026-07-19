@@ -4,6 +4,7 @@
 #include "launcher.h"
 #include <lvgl.h>
 #include "ble_kbd.h"
+#include "calendar.h"
 #include "config.h"
 #include "notes.h"
 #include "settings.h"
@@ -98,6 +99,7 @@ void open_app(const char* name) {
 void tile_click_cb(lv_event_t* e) {
   const char* name = static_cast<const char*>(lv_event_get_user_data(e));
   if (strcmp(name, "Notes") == 0) notes_open();
+  else if (strcmp(name, "Calendar") == 0) calendar_open();
   else if (strcmp(name, "Settings") == 0) settings_open();
   else open_app(name);
 }
