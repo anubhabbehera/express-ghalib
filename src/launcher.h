@@ -15,3 +15,7 @@ void launcher_build();
 // Jump back to the home grid from anywhere (e.g. a physical Home button); frees
 // the current app screen if it isn't the home screen.
 void launcher_go_home();
+
+// Register a teardown hook the launcher runs (once) when returning home. Apps
+// set this on entry to free their screens/timers safely after home is shown.
+void launcher_set_leave_hook(void (*fn)());
