@@ -1,0 +1,180 @@
+/**
+ * launcher.cpp — home-screen app launcher. See launcher.h.
+ */
+#include "launcher.h"
+#include <lvgl.h>
+#include "ble_kbd.h"
+#include "st7305.h"
+
+namespace {
+
+struct App {
+  const char* icon;   // LV_SYMBOL_*
+  const char* name;
+};
+
+// Icons are LVGL's built-in vector glyphs — crisp on a 1-bit panel, no assets.
+const App kApps[] = {
+    {LV_SYMBOL_EDIT,     "Notes"},
+    {LV_SYMBOL_LIST,     "Calendar"},
+    {LV_SYMBOL_BELL,     "Reminders"},
+    {LV_SYMBOL_AUDIO,    "Music"},
+    {LV_SYMBOL_SETTINGS, "Settings"},
+};
+
+lv_obj_t* g_home = nullptr;      // the launcher screen
+lv_obj_t* g_first_tile = nullptr;
+lv_obj_t* g_ble_icon = nullptr;
+
+// --- focus feedback: invert the focused tile (black fill, white glyph) ------
+void tile_focus_cb(lv_event_t* e) {
+  lv_obj_t* tile = lv_event_get_target(e);
+  const bool focused = lv_event_get_code(e) == LV_EVENT_FOCUSED;
+  const lv_color_t bg = focused ? lv_color_black() : lv_color_white();
+  const lv_color_t fg = focused ? lv_color_white() : lv_color_black();
+  lv_obj_set_style_bg_color(tile, bg, 0);
+  lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
+  for (uint32_t i = 0; i < lv_obj_get_child_cnt(tile); i++)
+    lv_obj_set_style_text_color(lv_obj_get_child(tile, i), fg, 0);
+}
+
+// --- arrow keys move focus across the grid ---------------------------------
+void tile_key_cb(lv_event_t* e) {
+  const uint32_t k = lv_event_get_key(e);
+  lv_group_t* g = lv_group_get_default();
+  if (k == LV_KEY_RIGHT || k == LV_KEY_DOWN || k == LV_KEY_NEXT)
+    lv_group_focus_next(g);
+  else if (k == LV_KEY_LEFT || k == LV_KEY_UP || k == LV_KEY_PREV)
+    lv_group_focus_prev(g);
+}
+
+// --- stub app screen with Esc-to-back --------------------------------------
+void app_back_cb(lv_event_t* e) {
+  lv_obj_t* app = static_cast<lv_obj_t*>(lv_event_get_user_data(e));
+  const bool esc = lv_event_get_code(e) == LV_EVENT_KEY &&
+                   lv_event_get_key(e) == LV_KEY_ESC;
+  if (esc || lv_event_get_code(e) == LV_EVENT_CLICKED) {
+    lv_scr_load(g_home);
+    if (g_first_tile) lv_group_focus_obj(g_first_tile);
+    lv_obj_del_async(app);  // frees the app screen + removes its group objs
+  }
+}
+
+void open_app(const char* name) {
+  lv_obj_t* app = lv_obj_create(nullptr);
+
+  lv_obj_t* title = lv_label_create(app);
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+  lv_label_set_text(title, name);
+  lv_obj_align(title, LV_ALIGN_CENTER, 0, -24);
+
+  lv_obj_t* hint = lv_label_create(app);
+  lv_label_set_text(hint, "coming soon");
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 8);
+
+  lv_obj_t* back = lv_btn_create(app);
+  lv_obj_t* bl = lv_label_create(back);
+  lv_label_set_text(bl, LV_SYMBOL_LEFT "  Back");
+  lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -16);
+  lv_group_add_obj(lv_group_get_default(), back);
+  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_CLICKED, app);
+  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_KEY, app);
+
+  lv_scr_load(app);
+  lv_group_focus_obj(back);
+}
+
+void tile_click_cb(lv_event_t* e) {
+  open_app(static_cast<const char*>(lv_event_get_user_data(e)));
+}
+
+// Periodically reflect BLE connection state in the status bar icon.
+void status_timer_cb(lv_timer_t*) {
+  lv_label_set_text(g_ble_icon,
+                    ble_connected() ? LV_SYMBOL_BLUETOOTH : LV_SYMBOL_EYE_CLOSE);
+}
+
+lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
+  lv_obj_t* tile = lv_obj_create(parent);
+  lv_obj_set_size(tile, 112, 100);
+  lv_obj_set_style_radius(tile, 8, 0);
+  lv_obj_set_style_border_width(tile, 1, 0);
+  lv_obj_set_style_border_color(tile, lv_color_black(), 0);
+  lv_obj_set_style_pad_all(tile, 6, 0);
+  lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
+  // center icon over label
+  lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+
+  lv_obj_t* icon = lv_label_create(tile);
+  lv_obj_set_style_text_font(icon, &lv_font_montserrat_28, 0);
+  lv_label_set_text(icon, app.icon);
+
+  lv_obj_t* label = lv_label_create(tile);
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+  lv_label_set_text(label, app.name);
+
+  lv_obj_add_event_cb(tile, tile_focus_cb, LV_EVENT_FOCUSED, nullptr);
+  lv_obj_add_event_cb(tile, tile_focus_cb, LV_EVENT_DEFOCUSED, nullptr);
+  lv_obj_add_event_cb(tile, tile_key_cb, LV_EVENT_KEY, nullptr);
+  lv_obj_add_event_cb(tile, tile_click_cb, LV_EVENT_CLICKED,
+                      const_cast<char*>(app.name));
+  lv_group_add_obj(lv_group_get_default(), tile);
+  return tile;
+}
+
+}  // namespace
+
+void launcher_go_home() {
+  if (!g_home) return;
+  lv_obj_t* cur = lv_scr_act();
+  lv_scr_load(g_home);
+  if (g_first_tile) lv_group_focus_obj(g_first_tile);
+  if (cur != g_home) lv_obj_del_async(cur);  // free the app screen we left
+}
+
+void launcher_build() {
+  g_home = lv_obj_create(nullptr);
+  lv_obj_clear_flag(g_home, LV_OBJ_FLAG_SCROLLABLE);
+
+  // --- status bar ---
+  lv_obj_t* bar = lv_obj_create(g_home);
+  lv_obj_set_size(bar, ST7305_W, 34);
+  lv_obj_set_pos(bar, 0, 0);
+  lv_obj_set_style_border_width(bar, 0, 0);
+  lv_obj_set_style_radius(bar, 0, 0);
+  lv_obj_set_style_pad_hor(bar, 12, 0);
+  lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* wordmark = lv_label_create(bar);
+  lv_label_set_text(wordmark, "express-ghalib");
+  lv_obj_align(wordmark, LV_ALIGN_LEFT_MID, 0, 0);
+
+  g_ble_icon = lv_label_create(bar);
+  lv_label_set_text(g_ble_icon, LV_SYMBOL_EYE_CLOSE);
+  lv_obj_align(g_ble_icon, LV_ALIGN_RIGHT_MID, 0, 0);
+
+  // --- app grid ---
+  lv_obj_t* grid = lv_obj_create(g_home);
+  lv_obj_set_size(grid, ST7305_W, ST7305_H - 34);
+  lv_obj_set_pos(grid, 0, 34);
+  lv_obj_set_style_border_width(grid, 0, 0);
+  lv_obj_set_style_pad_all(grid, 12, 0);
+  lv_obj_set_style_pad_row(grid, 10, 0);
+  lv_obj_set_style_pad_column(grid, 10, 0);
+  lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+
+  for (const App& a : kApps) {
+    lv_obj_t* t = make_tile(grid, a);
+    if (!g_first_tile) g_first_tile = t;
+  }
+
+  lv_scr_load(g_home);
+  if (g_first_tile) lv_group_focus_obj(g_first_tile);
+  lv_timer_create(status_timer_cb, 1000, nullptr);
+}

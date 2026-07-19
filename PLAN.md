@@ -117,10 +117,18 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
   I2C bus map: 0x18 ES8311, 0x40 ES7210, 0x51 PCF85063 RTC, 0x70 SHTC3.
 
 ### M1 — Input layer + launcher shell (de-risk BLE keyboard — highest risk)
-- NimBLE HOGP host: scan, pair, bond a BLE keyboard; persist MAC; auto-reconnect.
-- HID report → LVGL key event bridge; on-screen "typing test" buffer.
-- KEY/BOOT buttons → Back/Menu.
-- Home-screen app launcher with LVGL group navigation.
+- ✅ NimBLE HOGP host: scan, connect, bond (encrypted, persisted), auto-reconnect.
+- ✅ HID report → LVGL key event bridge; on-screen "typing test" textarea works.
+  - **8BitDo quirk:** ignores Boot Protocol; only sends a 16-byte **NKRO bitmap**
+    report (byte0 = modifiers; byte b≥1, bit p → HID usage (b-1)*8 + p). Decoded
+    in `ble_kbd.cpp` incl. shift. Verified: typed text + `!`(shift) + Enter.
+- ✅ KEY/BOOT buttons → Back/Home. KEY (GPIO18) injects Esc (Back); BOOT (GPIO0)
+  jumps to the launcher (Home). Active-low, debounced.
+- ✅ Home-screen app launcher: icon-tile grid (Notes/Calendar/Reminders/Music/
+  Settings), arrow-key nav with inverted focus, Enter opens stub app, Esc = back.
+  Perf: ST7305 SPI 2→10 MHz (Waveshare-proven) fixed typing lag; font Montserrat 18.
+- **✅ M1 COMPLETE** — pair/bond a BLE keyboard, type into a field, navigate the
+  launcher with arrows/enter/esc, and Back/Home via physical buttons. All verified.
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates
@@ -158,7 +166,8 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 | RTC drift without network | Low | Optional NTP sync; backup battery keeps time across power loss |
 
 ## 6. Open questions (answer before/at M1)
-1. Do you already own a specific **BLE** keyboard, or need a recommendation? (Model matters for HOGP quirks.)
+1. ~~Do you already own a specific **BLE** keyboard?~~ **Resolved: 8BitDo Retro Mechanical
+   Keyboard — confirmed BLE/HOGP.** Use its Bluetooth mode switch ("B"); expect bonding.
 2. ~~Confirm the RLCD's actual **color depth**~~ — **Resolved: ST7305 is 1-bit monochrome.** LVGL uses `LV_COLOR_DEPTH 1`; design a pure black/white theme. (Verify in M0 whether the panel exposes any grayscale via ST7305 4-level mode.)
 3. Music format scope — MP3 only, or WAV/AAC too?
 4. Is Wi-Fi in scope at all for v1 (NTP only), or fully offline?
