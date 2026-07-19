@@ -59,9 +59,25 @@ static lv_indev_drv_t g_kbd_indev_drv;
 static lv_group_t*    g_ui_group = nullptr;
 
 static void kbd_read_cb(lv_indev_drv_t*, lv_indev_data_t* data) {
-  // TODO(M1): pop the next key from the BLE HID -> LVGL key queue.
-  //   Map HID usage codes to LV_KEY_NEXT/PREV/ENTER/ESC + printable chars.
-  data->state = LV_INDEV_STATE_RELEASED;
+  // Report each queued key as PRESSED, then RELEASED on the next poll, so LVGL
+  // registers a full keystroke.
+  static uint32_t cur = 0;
+  static bool held = false;
+  if (held) {
+    data->key = cur;
+    data->state = LV_INDEV_STATE_RELEASED;
+    held = false;
+    return;
+  }
+  uint32_t k;
+  if (ble_kbd_pop(&k)) {
+    cur = k;
+    data->key = k;
+    data->state = LV_INDEV_STATE_PRESSED;
+    held = true;
+  } else {
+    data->state = LV_INDEV_STATE_RELEASED;
+  }
 }
 
 static void input_init() {
@@ -261,7 +277,15 @@ static void build_ble_screen() {
   g_ble_label = lv_label_create(scr);
   lv_label_set_text(g_ble_label, "scanning...");
   lv_obj_set_width(g_ble_label, ST7305_W - 32);
-  lv_obj_align(g_ble_label, LV_ALIGN_TOP_LEFT, 16, 40);
+  lv_obj_align(g_ble_label, LV_ALIGN_TOP_LEFT, 16, 34);
+
+  // Typing test: a textarea in the keypad group receives decoded BLE keys.
+  lv_obj_t* ta = lv_textarea_create(scr);
+  lv_obj_set_size(ta, ST7305_W - 32, 150);
+  lv_obj_align(ta, LV_ALIGN_BOTTOM_MID, 0, -8);
+  lv_textarea_set_placeholder_text(ta, "type on the BLE keyboard...");
+  lv_group_add_obj(lv_group_get_default(), ta);
+  lv_group_focus_obj(ta);
 
   lv_timer_create(ble_timer_cb, 1000, nullptr);  // refresh status every 1s
 }
