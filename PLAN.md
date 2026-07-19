@@ -144,10 +144,15 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
   hand with explicit black text + inverted-focus highlight (see notes.cpp make_row).
 
 ### M3 — Calendar + reminders
-- PCF85063 driver: read/set time, set alarm, handle IRQ.
-- Month/agenda view; add/edit local events.
-- Reminder scheduler: arm RTC alarm for next reminder → wake + on-screen alert + beep.
-- Optional NTP sync on Wi-Fi connect to correct RTC drift.
+- ◐ PCF85063 driver: ✅ read/set time (rtc.cpp); ⬜ alarm + IRQ.
+- ⬜ Month/agenda view; add/edit local events.
+- ⬜ Reminder scheduler: arm RTC alarm for next reminder → wake + on-screen alert + beep.
+- ✅ **Wi-Fi NTP sync + Settings screen** (user priority): Settings tile → Wi-Fi scan →
+  pick SSID → password (Enter submits) → connect + NTP → set RTC (UTC); creds saved
+  to NVS, auto-sync at boot; status-bar Wi-Fi icon. Wi-Fi connects only to sync then
+  disconnects (RTC is timekeeper). Config via config.{h,cpp} (Preferences).
+  - Gotchas fixed: one-line textarea swallows Tab/Enter → submit via LV_EVENT_READY;
+    Enter key-release leaked a click to the home tile → defer go-home via one-shot timer.
 - **Exit:** an event set 2 min out fires a visible + audible reminder.
 
 ### M4 — Music player

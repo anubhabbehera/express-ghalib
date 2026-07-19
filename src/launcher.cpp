@@ -4,7 +4,9 @@
 #include "launcher.h"
 #include <lvgl.h>
 #include "ble_kbd.h"
+#include "config.h"
 #include "notes.h"
+#include "settings.h"
 #include "st7305.h"
 
 namespace {
@@ -26,7 +28,9 @@ const App kApps[] = {
 lv_obj_t* g_home = nullptr;      // the launcher screen
 lv_obj_t* g_tiles[8] = {};
 int       g_tile_n = 0;
-lv_obj_t* g_ble_icon = nullptr;
+lv_obj_t* g_ble_icon  = nullptr;
+lv_obj_t* g_wifi_icon = nullptr;
+bool      g_wifi_ok   = false;
 
 lv_obj_t* g_app_scr = nullptr;   // a stub app screen, if open
 void (*g_leave)() = nullptr;     // teardown hook for whatever app is open
@@ -94,14 +98,17 @@ void open_app(const char* name) {
 void tile_click_cb(lv_event_t* e) {
   const char* name = static_cast<const char*>(lv_event_get_user_data(e));
   if (strcmp(name, "Notes") == 0) notes_open();
+  else if (strcmp(name, "Settings") == 0) settings_open();
   else open_app(name);
 }
 
-// Periodically reflect BLE connection state in the status bar icon.
+// Periodically reflect BLE + Wi-Fi state in the status bar icons.
 void status_timer_cb(lv_timer_t*) {
   if (g_ble_icon)
     lv_label_set_text(g_ble_icon, ble_connected() ? LV_SYMBOL_BLUETOOTH
                                                    : LV_SYMBOL_EYE_CLOSE);
+  if (g_wifi_icon)
+    lv_label_set_text(g_wifi_icon, g_wifi_ok ? LV_SYMBOL_WIFI : "");
 }
 
 lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
@@ -146,6 +153,8 @@ void launcher_show() {
 
 void launcher_set_leave_hook(void (*fn)()) { g_leave = fn; }
 
+void launcher_set_wifi_ok(bool ok) { g_wifi_ok = ok; }
+
 void launcher_go_home() {
   void (*f)() = g_leave;
   g_leave = nullptr;
@@ -173,6 +182,12 @@ void launcher_build() {
   g_ble_icon = lv_label_create(bar);
   lv_label_set_text(g_ble_icon, LV_SYMBOL_EYE_CLOSE);
   lv_obj_align(g_ble_icon, LV_ALIGN_RIGHT_MID, 0, 0);
+
+  g_wifi_icon = lv_label_create(bar);
+  String s, p;
+  g_wifi_ok = config_get_wifi(s, p);  // "set up" if creds are stored
+  lv_label_set_text(g_wifi_icon, g_wifi_ok ? LV_SYMBOL_WIFI : "");
+  lv_obj_align(g_wifi_icon, LV_ALIGN_RIGHT_MID, -28, 0);
 
   // --- app grid ---
   lv_obj_t* grid = lv_obj_create(g_home);
