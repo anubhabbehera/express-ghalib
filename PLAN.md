@@ -117,10 +117,13 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
   I2C bus map: 0x18 ES8311, 0x40 ES7210, 0x51 PCF85063 RTC, 0x70 SHTC3.
 
 ### M1 — Input layer + launcher shell (de-risk BLE keyboard — highest risk)
-- NimBLE HOGP host: scan, pair, bond a BLE keyboard; persist MAC; auto-reconnect.
-- HID report → LVGL key event bridge; on-screen "typing test" buffer.
-- KEY/BOOT buttons → Back/Menu.
-- Home-screen app launcher with LVGL group navigation.
+- ✅ NimBLE HOGP host: scan, connect, bond (encrypted, persisted), auto-reconnect.
+- ✅ HID report → LVGL key event bridge; on-screen "typing test" textarea works.
+  - **8BitDo quirk:** ignores Boot Protocol; only sends a 16-byte **NKRO bitmap**
+    report (byte0 = modifiers; byte b≥1, bit p → HID usage (b-1)*8 + p). Decoded
+    in `ble_kbd.cpp` incl. shift. Verified: typed text + `!`(shift) + Enter.
+- ⬜ KEY/BOOT buttons → Back/Menu.
+- ⬜ Home-screen app launcher with LVGL group navigation.
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates
