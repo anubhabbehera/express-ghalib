@@ -127,6 +127,14 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
 
 }  // namespace
 
+void launcher_go_home() {
+  if (!g_home) return;
+  lv_obj_t* cur = lv_scr_act();
+  lv_scr_load(g_home);
+  if (g_first_tile) lv_group_focus_obj(g_first_tile);
+  if (cur != g_home) lv_obj_del_async(cur);  // free the app screen we left
+}
+
 void launcher_build() {
   g_home = lv_obj_create(nullptr);
   lv_obj_clear_flag(g_home, LV_OBJ_FLAG_SCROLLABLE);
