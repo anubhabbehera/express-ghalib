@@ -132,10 +132,16 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates
-- Note list, create/edit/delete, LittleFS persistence, autosave.
-- Template picker (journal, daily log, blank); templates seed title + body scaffold.
-- Text editor: cursor, backspace, word-wrap, scroll — tuned for slow refresh.
-- **Exit:** create a journal entry from a template, reopen it after reboot.
+- ✅ Note list, create/edit/delete, LittleFS persistence, autosave (3s + on exit).
+  One file per note at `/notes/<id>.txt`; first line = title. Verified: survives reboot.
+- ✅ Template picker (Blank / Journal / Daily Log) on "New note"; templates seed
+  the editor. Daily Log titles by date via the PCF85063 RTC ({date} -> MM-DD-YY).
+  Existing notes open with no template (blank failover).
+- ✅ Text editor: LVGL textarea, steady (non-blinking) cursor for the reflective panel.
+- ✅ **Exit met:** create a note from a template, reopen after reboot — verified.
+- **✅ M2 COMPLETE.** (RTC read brought forward for dates; full RTC set/NTP is M3.)
+- Mono-UI lesson: `lv_list` renders invisibly on the 1-bit panel — build rows by
+  hand with explicit black text + inverted-focus highlight (see notes.cpp make_row).
 
 ### M3 — Calendar + reminders
 - PCF85063 driver: read/set time, set alarm, handle IRQ.
