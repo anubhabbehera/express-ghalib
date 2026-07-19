@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <lvgl.h>
+#include "ble_kbd.h"
 #include "shtc3.h"
 #include "st7305.h"
 
@@ -199,7 +200,7 @@ static void wifi_timer_cb(lv_timer_t*) {  // runs every 1000 ms
   WiFi.scanNetworks(true /*async*/);  // kick a new scan
 }
 
-static void build_status_screen() {
+[[maybe_unused]] static void build_status_screen() {
   lv_obj_t* scr = lv_scr_act();
 
   lv_obj_t* title = lv_label_create(scr);
@@ -235,6 +236,36 @@ static void build_status_screen() {
   sensor_timer_cb(nullptr);                          // first reading immediately
 }
 
+// ---------------------------------------------------------------------------
+// M1 (iteration 1) — BLE scan screen. Lists nearby BLE devices; HID devices
+// (like the 8BitDo keyboard in Bluetooth mode) are marked with '*'.
+// ---------------------------------------------------------------------------
+static lv_obj_t* g_ble_label = nullptr;
+
+static void ble_timer_cb(lv_timer_t*) {
+  static uint32_t tick = 0;
+  tick++;
+  lv_label_set_text(g_ble_label, ble_status_text().c_str());
+  Serial.printf("[HB] tick=%lu heap=%lu\n", (unsigned long)tick,
+                (unsigned long)ESP.getFreeHeap());
+}
+
+static void build_ble_screen() {
+  lv_obj_t* scr = lv_scr_act();
+
+  lv_obj_t* title = lv_label_create(scr);
+  lv_label_set_text(title, "BLE keyboard host");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+
+  g_ble_label = lv_label_create(scr);
+  lv_label_set_text(g_ble_label, "scanning...");
+  lv_obj_set_width(g_ble_label, ST7305_W - 32);
+  lv_obj_align(g_ble_label, LV_ALIGN_TOP_LEFT, 16, 40);
+
+  lv_timer_create(ble_timer_cb, 1000, nullptr);  // refresh status every 1s
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -242,11 +273,12 @@ void setup() {
 
   display_init();
   input_init();
-  shtc3_init();           // I2C bus (SDA=13, SCL=14)
-  build_status_screen();  // M0.5 mock screen
+  build_ble_screen();  // M1: show BLE scan results
+  ble_init();          // start NimBLE central scan
 }
 
 void loop() {
+  ble_loop();          // drive the BLE connect state machine
   lv_timer_handler();  // LVGL tick is driven by millis() via LV_TICK_CUSTOM
   delay(5);
 }
