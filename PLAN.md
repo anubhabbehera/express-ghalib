@@ -107,6 +107,15 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 - Wrap the panel in an LVGL display driver; render a static test screen.
 - **Exit:** text renders crisply; we know the real color depth + redraw cost.
 
+### M0.5 — Sensor + Wi-Fi mock screen (de-risk I2C + Wi-Fi) ✅
+- SHTC3 temp/humidity over I2C (SDA=13, SCL=14, addr 0x70); live on-panel.
+- Async Wi-Fi SSID scan → on-screen list with RSSI, re-scans every ~15s.
+- **Exit:** panel shows live temp/humidity that reacts to breath, plus nearby SSIDs.
+- Lessons learned: (1) Arduino `Wire` needs explicit `INPUT_PULLUP` on SDA/SCL or
+  the SHTC3 won't ACK; (2) LVGL's `lv_label_set_text_fmt` drops `%f` unless
+  `LV_SPRINTF_USE_FLOAT` is set — format floats with newlib `snprintf` instead.
+  I2C bus map: 0x18 ES8311, 0x40 ES7210, 0x51 PCF85063 RTC, 0x70 SHTC3.
+
 ### M1 — Input layer + launcher shell (de-risk BLE keyboard — highest risk)
 - NimBLE HOGP host: scan, pair, bond a BLE keyboard; persist MAC; auto-reconnect.
 - HID report → LVGL key event bridge; on-screen "typing test" buffer.
