@@ -229,6 +229,8 @@ String ble_status_text() {
   return s;
 }
 
+bool ble_connected() { return g_state == CONNECTED; }
+
 bool ble_kbd_pop(uint32_t* out) {
   bool ok = false;
   portENTER_CRITICAL(&g_qmux);

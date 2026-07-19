@@ -52,8 +52,12 @@
  *==========================*/
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_DEFAULT &lv_font_montserrat_16
+#define LV_FONT_MONTSERRAT_28 1   /* launcher icons + titles */
+// Montserrat is clean and modern; 18px body reads well on the 1-bit panel
+// (bigger = the anti-aliasing-to-1bit thresholding is less visible).
+#define LV_FONT_DEFAULT &lv_font_montserrat_18
 
 /*==========================
  *   THEME  (mono)
