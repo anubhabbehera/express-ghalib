@@ -12,6 +12,7 @@ bool storage_init() {
     return false;
   }
   if (!LittleFS.exists("/notes")) LittleFS.mkdir("/notes");
+  if (!LittleFS.exists("/events")) LittleFS.mkdir("/events");
   Serial.printf("[FS] mounted: %u / %u bytes used\n",
                 (unsigned)LittleFS.usedBytes(), (unsigned)LittleFS.totalBytes());
   return true;
