@@ -10,3 +10,9 @@ void rtc_init();
 
 // Write today's date as "MM-DD-YY" into out (needs >= 9 bytes).
 void rtc_date_mmddyy(char* out);
+
+// Set the clock (e.g. from NTP or manual entry). Clears the oscillator-stop flag.
+void rtc_set(int year, int month, int day, int hour, int minute, int second);
+
+// Write current date+time as "YYYY-MM-DD HH:MM" into out (needs >= 17 bytes).
+void rtc_datetime(char* out);

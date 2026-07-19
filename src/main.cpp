@@ -11,6 +11,7 @@
 #include "buttons.h"
 #include "launcher.h"
 #include "rtc.h"
+#include "settings.h"
 #include "shtc3.h"
 #include "st7305.h"
 #include "storage.h"
@@ -305,6 +306,7 @@ void setup() {
   storage_init();      // mount LittleFS for notes/config
   rtc_init();          // PCF85063 RTC (I2C) — dates for Daily Log
   launcher_build();    // home-screen app launcher (keyboard-navigated)
+  settings_boot_sync();// if Wi-Fi creds saved: connect + NTP-sync the RTC, then off
   ble_init();          // start NimBLE central scan + auto-connect
 }
 

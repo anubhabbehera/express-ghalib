@@ -67,3 +67,19 @@ void rtc_date_mmddyy(char* out) {
   const uint8_t y  = bcd2dec(read_reg(0x0A));
   snprintf(out, 9, "%02d-%02d-%02d", mo, d, y);
 }
+
+void rtc_set(int y, int mo, int d, int h, int mi, int s) {
+  set_datetime(y, mo, d, h, mi, s);
+  Serial.printf("[RTC] set to %04d-%02d-%02d %02d:%02d:%02d\n", y, mo, d, h, mi, s);
+}
+
+void rtc_datetime(char* out) {
+  const uint8_t s  = bcd2dec(read_reg(0x04) & 0x7F);
+  const uint8_t mi = bcd2dec(read_reg(0x05) & 0x7F);
+  const uint8_t h  = bcd2dec(read_reg(0x06) & 0x3F);
+  const uint8_t d  = bcd2dec(read_reg(0x07) & 0x3F);
+  const uint8_t mo = bcd2dec(read_reg(0x09) & 0x1F);
+  const uint8_t y  = bcd2dec(read_reg(0x0A));
+  (void)s;
+  snprintf(out, 17, "20%02d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+}
