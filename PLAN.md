@@ -143,11 +143,23 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 - Mono-UI lesson: `lv_list` renders invisibly on the 1-bit panel — build rows by
   hand with explicit black text + inverted-focus highlight (see notes.cpp make_row).
 
-### M3 — Calendar + reminders
-- PCF85063 driver: read/set time, set alarm, handle IRQ.
-- Month/agenda view; add/edit local events.
-- Reminder scheduler: arm RTC alarm for next reminder → wake + on-screen alert + beep.
-- Optional NTP sync on Wi-Fi connect to correct RTC drift.
+### M3 — Calendar (+ Wi-Fi/NTP time)
+- ✅ PCF85063 driver: read/set time (rtc.cpp). (Alarm + IRQ deferred to M3.5.)
+- ⬜ Agenda view: chronologically-sorted event list; add/edit/delete local events.
+  One file per event at `/events/<id>.txt` (line 1 = `YYYY-MM-DD HH:MM`, line 2 = title),
+  edited via a two-line textarea (same pattern as the Notes editor).
+- ✅ **Wi-Fi NTP sync + Settings screen** (user priority): Settings tile → Wi-Fi scan →
+  pick SSID → password (Enter submits) → connect + NTP → set RTC (UTC); creds saved
+  to NVS, auto-sync at boot; status-bar Wi-Fi icon. Wi-Fi connects only to sync then
+  disconnects (RTC is timekeeper). Config via config.{h,cpp} (Preferences).
+  - Gotchas fixed: one-line textarea swallows Tab/Enter → submit via LV_EVENT_READY;
+    Enter key-release leaked a click to the home tile → defer go-home via one-shot timer.
+- **Exit:** create an event from the keyboard, reopen after reboot — it persists.
+
+### M3.5 — Reminders (deferred out of M3)
+- ⬜ PCF85063 alarm + IRQ handling.
+- ⬜ Reminder scheduler: arm the RTC alarm for the next event's reminder → wake +
+  on-screen alert + ES8311 beep. (First use of the audio codec — a preview of M4.)
 - **Exit:** an event set 2 min out fires a visible + audible reminder.
 
 ### M4 — Music player
