@@ -5,7 +5,9 @@
  * scan. Fill the TODOs milestone by milestone (see PLAN.md).
  */
 #include <Arduino.h>
+#include <WiFi.h>
 #include <lvgl.h>
+#include "shtc3.h"
 #include "st7305.h"
 
 // ---------------------------------------------------------------------------
@@ -82,14 +84,9 @@ static void input_init() {
 
 // ---------------------------------------------------------------------------
 // M0 test pattern — reveals orientation / packing / address-window errors on
-// the FIRST flash. What to look for:
-//   * The border must hug all four panel edges (address window correct).
-//   * Corner tags TL/TR/BL/BR must sit in the named corners (orientation ok).
-//   * The diagonal must be a clean straight line corner-to-corner (no x/y swap).
-//   * The 2x4 tick grid near center must be evenly spaced with no shear/stagger
-//     (2x4-block packing correct). Staggered ticks => packing math is off.
+// the FIRST flash. Kept for future display debugging (not shown by default).
 // ---------------------------------------------------------------------------
-static void build_hello_screen() {
+[[maybe_unused]] static void build_hello_screen() {
   lv_obj_t* scr = lv_scr_act();
 
   // Full-screen border box.
@@ -146,6 +143,98 @@ static void build_hello_screen() {
   lv_obj_align(label, LV_ALIGN_CENTER, 0, -60);
 }
 
+// ---------------------------------------------------------------------------
+// M0.5 status screen — live SHTC3 temp/humidity + async Wi-Fi SSID scan.
+// A mock "sensors + radio" screen to exercise I2C and Wi-Fi on the panel.
+// ---------------------------------------------------------------------------
+static lv_obj_t* g_temp_label = nullptr;
+static lv_obj_t* g_hum_label  = nullptr;
+static lv_obj_t* g_wifi_label = nullptr;
+static int g_wifi_cooldown = 0;  // seconds until next scan (see wifi_timer_cb)
+
+static void sensor_timer_cb(lv_timer_t*) {
+  float tC, rh;
+  if (shtc3_read(tC, rh)) {
+    // NOTE: use newlib snprintf, not lv_label_set_text_fmt — LVGL's built-in
+    // printf drops %f unless LV_SPRINTF_USE_FLOAT is enabled.
+    char tbuf[24], hbuf[24];
+    snprintf(tbuf, sizeof(tbuf), "Temp   %.1f C", tC);
+    snprintf(hbuf, sizeof(hbuf), "Hum    %.1f %%", rh);
+    lv_label_set_text(g_temp_label, tbuf);
+    lv_label_set_text(g_hum_label, hbuf);
+  } else {
+    lv_label_set_text(g_temp_label, "Temp   -- C");
+    lv_label_set_text(g_hum_label,  "Hum    -- %");
+  }
+}
+
+static void render_wifi(int n) {
+  if (n <= 0) { lv_label_set_text(g_wifi_label, "(no networks found)"); return; }
+  String s;
+  const int show = n < 8 ? n : 8;  // panel space: cap the list
+  for (int i = 0; i < show; i++) {
+    String ssid = WiFi.SSID(i);
+    if (ssid.isEmpty()) ssid = "<hidden>";
+    const bool locked = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    s += (locked ? "* " : "  ");
+    s += ssid;
+    s += "  ";
+    s += String(WiFi.RSSI(i));
+    s += "dBm\n";
+  }
+  if (n > show) s += "... +" + String(n - show) + " more";
+  lv_label_set_text(g_wifi_label, s.c_str());
+}
+
+static void wifi_timer_cb(lv_timer_t*) {  // runs every 1000 ms
+  const int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) return;
+  if (n >= 0) {                       // scan finished
+    render_wifi(n);
+    WiFi.scanDelete();
+    g_wifi_cooldown = 15;             // re-scan every ~15 s
+    return;
+  }
+  if (g_wifi_cooldown > 0) { g_wifi_cooldown--; return; }
+  WiFi.scanNetworks(true /*async*/);  // kick a new scan
+}
+
+static void build_status_screen() {
+  lv_obj_t* scr = lv_scr_act();
+
+  lv_obj_t* title = lv_label_create(scr);
+  lv_label_set_text(title, "express-ghalib  -  status");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+
+  g_temp_label = lv_label_create(scr);
+  lv_obj_set_style_text_font(g_temp_label, &lv_font_montserrat_20, 0);
+  lv_label_set_text(g_temp_label, "Temp   -- C");
+  lv_obj_align(g_temp_label, LV_ALIGN_TOP_LEFT, 16, 40);
+
+  g_hum_label = lv_label_create(scr);
+  lv_obj_set_style_text_font(g_hum_label, &lv_font_montserrat_20, 0);
+  lv_label_set_text(g_hum_label, "Hum    -- %");
+  lv_obj_align(g_hum_label, LV_ALIGN_TOP_LEFT, 16, 72);
+
+  lv_obj_t* wifi_hdr = lv_label_create(scr);
+  lv_label_set_text(wifi_hdr, "Wi-Fi networks  (* = secured):");
+  lv_obj_align(wifi_hdr, LV_ALIGN_TOP_LEFT, 16, 116);
+
+  g_wifi_label = lv_label_create(scr);
+  lv_label_set_text(g_wifi_label, "scanning...");
+  lv_obj_set_width(g_wifi_label, ST7305_W - 32);
+  lv_obj_align(g_wifi_label, LV_ALIGN_TOP_LEFT, 16, 140);
+
+  // Wi-Fi in station mode, not connecting to anything — just scanning.
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  lv_timer_create(sensor_timer_cb, 2000, nullptr);  // temp/humidity every 2 s
+  lv_timer_create(wifi_timer_cb, 1000, nullptr);     // drive the async scan
+  sensor_timer_cb(nullptr);                          // first reading immediately
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -153,7 +242,8 @@ void setup() {
 
   display_init();
   input_init();
-  build_hello_screen();
+  shtc3_init();           // I2C bus (SDA=13, SCL=14)
+  build_status_screen();  // M0.5 mock screen
 }
 
 void loop() {
