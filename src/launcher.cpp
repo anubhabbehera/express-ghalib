@@ -4,6 +4,7 @@
 #include "launcher.h"
 #include <lvgl.h>
 #include "ble_kbd.h"
+#include "notes.h"
 #include "st7305.h"
 
 namespace {
@@ -23,8 +24,12 @@ const App kApps[] = {
 };
 
 lv_obj_t* g_home = nullptr;      // the launcher screen
-lv_obj_t* g_first_tile = nullptr;
+lv_obj_t* g_tiles[8] = {};
+int       g_tile_n = 0;
 lv_obj_t* g_ble_icon = nullptr;
+
+lv_obj_t* g_app_scr = nullptr;   // a stub app screen, if open
+void (*g_leave)() = nullptr;     // teardown hook for whatever app is open
 
 // --- focus feedback: invert the focused tile (black fill, white glyph) ------
 void tile_focus_cb(lv_event_t* e) {
@@ -48,20 +53,21 @@ void tile_key_cb(lv_event_t* e) {
     lv_group_focus_prev(g);
 }
 
-// --- stub app screen with Esc-to-back --------------------------------------
+// --- stub app screen (Calendar/Reminders/Music/Settings for now) -----------
+void stub_leave() {
+  if (g_app_scr) { lv_obj_del_async(g_app_scr); g_app_scr = nullptr; }
+}
+
 void app_back_cb(lv_event_t* e) {
-  lv_obj_t* app = static_cast<lv_obj_t*>(lv_event_get_user_data(e));
   const bool esc = lv_event_get_code(e) == LV_EVENT_KEY &&
                    lv_event_get_key(e) == LV_KEY_ESC;
-  if (esc || lv_event_get_code(e) == LV_EVENT_CLICKED) {
-    lv_scr_load(g_home);
-    if (g_first_tile) lv_group_focus_obj(g_first_tile);
-    lv_obj_del_async(app);  // frees the app screen + removes its group objs
-  }
+  if (esc || lv_event_get_code(e) == LV_EVENT_CLICKED) launcher_go_home();
 }
 
 void open_app(const char* name) {
   lv_obj_t* app = lv_obj_create(nullptr);
+  g_app_scr = app;
+  launcher_set_leave_hook(stub_leave);
 
   lv_obj_t* title = lv_label_create(app);
   lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
@@ -76,22 +82,26 @@ void open_app(const char* name) {
   lv_obj_t* bl = lv_label_create(back);
   lv_label_set_text(bl, LV_SYMBOL_LEFT "  Back");
   lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -16);
+  lv_group_remove_all_objs(lv_group_get_default());
   lv_group_add_obj(lv_group_get_default(), back);
-  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_CLICKED, app);
-  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_KEY, app);
+  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(back, app_back_cb, LV_EVENT_KEY, nullptr);
 
   lv_scr_load(app);
   lv_group_focus_obj(back);
 }
 
 void tile_click_cb(lv_event_t* e) {
-  open_app(static_cast<const char*>(lv_event_get_user_data(e)));
+  const char* name = static_cast<const char*>(lv_event_get_user_data(e));
+  if (strcmp(name, "Notes") == 0) notes_open();
+  else open_app(name);
 }
 
 // Periodically reflect BLE connection state in the status bar icon.
 void status_timer_cb(lv_timer_t*) {
-  lv_label_set_text(g_ble_icon,
-                    ble_connected() ? LV_SYMBOL_BLUETOOTH : LV_SYMBOL_EYE_CLOSE);
+  if (g_ble_icon)
+    lv_label_set_text(g_ble_icon, ble_connected() ? LV_SYMBOL_BLUETOOTH
+                                                   : LV_SYMBOL_EYE_CLOSE);
 }
 
 lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
@@ -103,7 +113,6 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_obj_set_style_pad_all(tile, 6, 0);
   lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
-  // center icon over label
   lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
@@ -121,18 +130,27 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_obj_add_event_cb(tile, tile_key_cb, LV_EVENT_KEY, nullptr);
   lv_obj_add_event_cb(tile, tile_click_cb, LV_EVENT_CLICKED,
                       const_cast<char*>(app.name));
-  lv_group_add_obj(lv_group_get_default(), tile);
   return tile;
+}
+
+// (Re)populate the input group with the launcher tiles and show the home grid.
+void launcher_show() {
+  lv_group_t* g = lv_group_get_default();
+  lv_group_remove_all_objs(g);
+  for (int i = 0; i < g_tile_n; i++) lv_group_add_obj(g, g_tiles[i]);
+  lv_scr_load(g_home);
+  if (g_tile_n) lv_group_focus_obj(g_tiles[0]);
 }
 
 }  // namespace
 
+void launcher_set_leave_hook(void (*fn)()) { g_leave = fn; }
+
 void launcher_go_home() {
-  if (!g_home) return;
-  lv_obj_t* cur = lv_scr_act();
-  lv_scr_load(g_home);
-  if (g_first_tile) lv_group_focus_obj(g_first_tile);
-  if (cur != g_home) lv_obj_del_async(cur);  // free the app screen we left
+  void (*f)() = g_leave;
+  g_leave = nullptr;
+  launcher_show();     // home is active again
+  if (f) f();          // now safe to tear down the app's screens
 }
 
 void launcher_build() {
@@ -169,12 +187,8 @@ void launcher_build() {
   lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
 
-  for (const App& a : kApps) {
-    lv_obj_t* t = make_tile(grid, a);
-    if (!g_first_tile) g_first_tile = t;
-  }
+  for (const App& a : kApps) g_tiles[g_tile_n++] = make_tile(grid, a);
 
-  lv_scr_load(g_home);
-  if (g_first_tile) lv_group_focus_obj(g_first_tile);
+  launcher_show();
   lv_timer_create(status_timer_cb, 1000, nullptr);
 }

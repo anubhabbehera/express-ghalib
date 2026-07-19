@@ -12,6 +12,7 @@
 #include "launcher.h"
 #include "shtc3.h"
 #include "st7305.h"
+#include "storage.h"
 
 // ---------------------------------------------------------------------------
 // Display: LVGL 1-bit monochrome -> ST7305 native framebuffer
@@ -300,6 +301,7 @@ void setup() {
   display_init();
   input_init();
   buttons_init();      // physical KEY/BOOT buttons
+  storage_init();      // mount LittleFS for notes/config
   launcher_build();    // home-screen app launcher (keyboard-navigated)
   ble_init();          // start NimBLE central scan + auto-connect
 }
