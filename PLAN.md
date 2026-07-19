@@ -158,7 +158,8 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 | RTC drift without network | Low | Optional NTP sync; backup battery keeps time across power loss |
 
 ## 6. Open questions (answer before/at M1)
-1. Do you already own a specific **BLE** keyboard, or need a recommendation? (Model matters for HOGP quirks.)
+1. ~~Do you already own a specific **BLE** keyboard?~~ **Resolved: 8BitDo Retro Mechanical
+   Keyboard — confirmed BLE/HOGP.** Use its Bluetooth mode switch ("B"); expect bonding.
 2. ~~Confirm the RLCD's actual **color depth**~~ — **Resolved: ST7305 is 1-bit monochrome.** LVGL uses `LV_COLOR_DEPTH 1`; design a pure black/white theme. (Verify in M0 whether the panel exposes any grayscale via ST7305 4-level mode.)
 3. Music format scope — MP3 only, or WAV/AAC too?
 4. Is Wi-Fi in scope at all for v1 (NTP only), or fully offline?
