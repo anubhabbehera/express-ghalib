@@ -34,10 +34,10 @@ struct St7305Pins {
   int rst  = 41;  // RLCD_RST_PIN
 };
 
-// SPI clock. Waveshare's docs warn the ST7305 is timing-insensitive and that
-// >~1 MHz gives no benefit and *can* cause corruption. Start low; raise only if
-// full-frame refresh feels too slow and the panel stays clean.
-static constexpr uint32_t ST7305_SPI_HZ = 2'000'000;
+// SPI clock. Waveshare's own LVGL demo drives this panel at 10 MHz (pclk_hz),
+// so 10 MHz is proven safe here. At 10 MHz a full 15 KB frame flushes in ~12 ms
+// (vs ~60 ms at 2 MHz) — this is what keeps typing/redraws responsive.
+static constexpr uint32_t ST7305_SPI_HZ = 10'000'000;
 
 // Bring up SPI + run the full ST7305 power-on/init sequence. Leaves display on.
 void st7305_init(const St7305Pins& pins = St7305Pins{});

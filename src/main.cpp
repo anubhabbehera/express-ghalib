@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <lvgl.h>
 #include "ble_kbd.h"
+#include "launcher.h"
 #include "shtc3.h"
 #include "st7305.h"
 
@@ -258,7 +259,7 @@ static void wifi_timer_cb(lv_timer_t*) {  // runs every 1000 ms
 // ---------------------------------------------------------------------------
 static lv_obj_t* g_ble_label = nullptr;
 
-static void ble_timer_cb(lv_timer_t*) {
+[[maybe_unused]] static void ble_timer_cb(lv_timer_t*) {
   static uint32_t tick = 0;
   tick++;
   lv_label_set_text(g_ble_label, ble_status_text().c_str());
@@ -266,7 +267,7 @@ static void ble_timer_cb(lv_timer_t*) {
                 (unsigned long)ESP.getFreeHeap());
 }
 
-static void build_ble_screen() {
+[[maybe_unused]] static void build_ble_screen() {
   lv_obj_t* scr = lv_scr_act();
 
   lv_obj_t* title = lv_label_create(scr);
@@ -297,8 +298,8 @@ void setup() {
 
   display_init();
   input_init();
-  build_ble_screen();  // M1: show BLE scan results
-  ble_init();          // start NimBLE central scan
+  launcher_build();    // home-screen app launcher (keyboard-navigated)
+  ble_init();          // start NimBLE central scan + auto-connect
 }
 
 void loop() {

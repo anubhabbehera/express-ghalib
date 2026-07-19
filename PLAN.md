@@ -123,7 +123,9 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
     report (byte0 = modifiers; byte b≥1, bit p → HID usage (b-1)*8 + p). Decoded
     in `ble_kbd.cpp` incl. shift. Verified: typed text + `!`(shift) + Enter.
 - ⬜ KEY/BOOT buttons → Back/Menu.
-- ⬜ Home-screen app launcher with LVGL group navigation.
+- ✅ Home-screen app launcher: icon-tile grid (Notes/Calendar/Reminders/Music/
+  Settings), arrow-key nav with inverted focus, Enter opens stub app, Esc = back.
+  Perf: ST7305 SPI 2→10 MHz (Waveshare-proven) fixed typing lag; font Montserrat 18.
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates
