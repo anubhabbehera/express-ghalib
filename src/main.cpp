@@ -38,7 +38,9 @@ static void mono_set_px_cb(lv_disp_drv_t*, uint8_t* buf, lv_coord_t /*buf_w*/,
 
 static void mono_flush_cb(lv_disp_drv_t* drv, const lv_area_t* /*area*/,
                           lv_color_t* /*color_p*/) {
-  st7305_flush_full(g_fb);  // full_refresh -> whole native buffer already packed
+  // direct_mode: set_px_cb has already written the changed pixels into g_fb (the
+  // persistent native framebuffer). Push the frame once, on the last dirty area.
+  if (lv_disp_flush_is_last(drv)) st7305_flush_full(g_fb);
   lv_disp_flush_ready(drv);
 }
 
@@ -55,7 +57,10 @@ static void display_init() {
   g_lv_disp_drv.draw_buf     = &g_lv_draw_buf;
   g_lv_disp_drv.flush_cb     = mono_flush_cb;
   g_lv_disp_drv.set_px_cb    = mono_set_px_cb;
-  g_lv_disp_drv.full_refresh = 1;          // reflective panel: redraw whole frame
+  // direct_mode: render only invalidated areas into the full-screen native
+  // framebuffer (g_fb persists), then push the whole frame once per refresh.
+  // This cuts render cost from ~120k px/refresh to just the dirty area.
+  g_lv_disp_drv.direct_mode  = 1;
   // For a portrait 300x400 UI, set g_lv_disp_drv.rotated + sw_rotate here.
   lv_disp_drv_register(&g_lv_disp_drv);
 }

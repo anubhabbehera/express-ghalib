@@ -14,5 +14,9 @@ void rtc_date_mmddyy(char* out);
 // Set the clock (e.g. from NTP or manual entry). Clears the oscillator-stop flag.
 void rtc_set(int year, int month, int day, int hour, int minute, int second);
 
-// Write current date+time as "YYYY-MM-DD HH:MM" into out (needs >= 17 bytes).
+// Write current UTC date+time as "YYYY-MM-DD HH:MM" into out (needs >= 17 bytes).
 void rtc_datetime(char* out);
+
+// Same, but with the saved local timezone offset applied (config_get_tz_offset).
+// This is the "wall clock" the user sees / enters events in.
+void rtc_local_datetime(char* out);
