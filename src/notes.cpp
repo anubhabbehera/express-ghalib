@@ -11,6 +11,7 @@
 #include <lvgl.h>
 #include <algorithm>
 #include <vector>
+#include "config.h"
 #include "launcher.h"
 #include "rtc.h"
 #include "st7305.h"
@@ -75,9 +76,24 @@ void delete_note(int id) { LittleFS.remove(note_path(id)); }
 lv_obj_t*    g_list_scr = nullptr;
 lv_obj_t*    g_pick_scr = nullptr;   // template picker
 lv_obj_t*    g_edit_scr = nullptr;
-lv_obj_t*    g_edit_ta  = nullptr;
+lv_obj_t*    g_title_ta = nullptr;   // fixed dark title header
+lv_obj_t*    g_edit_ta  = nullptr;   // bounded body
 lv_timer_t*  g_autosave = nullptr;
 int          g_edit_id  = -1;
+
+// Body text-size options (bottom bar). One focusable control: Left/Right or
+// Enter change the active size; persisted via config_get/set_text_size.
+const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
+                              &lv_font_montserrat_20};
+const char*      kSizeName[3] = {"S", "M", "L"};
+lv_obj_t*        g_size_lbl[3] = {};
+int              g_size = 1;
+
+void split_note(const String& full, String& title, String& body) {
+  const int nl = full.indexOf('\n');
+  if (nl < 0) { title = full; body = ""; }
+  else { title = full.substring(0, nl); body = full.substring(nl + 1); }
+}
 
 // New-note templates. First line becomes the note's title; the body seeds the
 // editor. "Blank" is the failover (existing notes also open with no template).
@@ -93,23 +109,31 @@ void build_picker();
 void close_picker();
 void open_editor(int id, const char* seed = nullptr);  // seed=null -> read file
 
+// Note file = "title\nbody" (list_notes reads line 1 as the title).
+String compose_note() {
+  String title = g_title_ta ? lv_textarea_get_text(g_title_ta) : "";
+  String body  = g_edit_ta  ? lv_textarea_get_text(g_edit_ta)  : "";
+  title.replace("\n", " ");                 // title is single-line
+  return title + "\n" + body;
+}
+
 void save_current() {
   if (!g_edit_ta) return;
-  const char* txt = lv_textarea_get_text(g_edit_ta);
-  if (!txt || txt[0] == '\0') delete_note(g_edit_id);  // drop empty notes
-  else write_note(g_edit_id, txt);
+  const String full = compose_note();
+  if (full == "\n") delete_note(g_edit_id);  // title + body both empty -> drop
+  else write_note(g_edit_id, full.c_str());
 }
 
 void autosave_cb(lv_timer_t*) {
   if (!g_edit_ta) return;
-  const char* txt = lv_textarea_get_text(g_edit_ta);
-  if (txt && txt[0]) write_note(g_edit_id, txt);
+  const String full = compose_note();
+  if (full != "\n") write_note(g_edit_id, full.c_str());
 }
 
 // Runs when returning to the launcher (Home button / list Esc).
 void notes_teardown() {
   if (g_autosave) { lv_timer_del(g_autosave); g_autosave = nullptr; }
-  if (g_edit_ta)  { save_current(); g_edit_ta = nullptr; }
+  if (g_edit_ta)  { save_current(); g_edit_ta = nullptr; g_title_ta = nullptr; }
   if (g_edit_scr) { lv_obj_del_async(g_edit_scr); g_edit_scr = nullptr; }
   if (g_pick_scr) { lv_obj_del_async(g_pick_scr); g_pick_scr = nullptr; }
   if (g_list_scr) { lv_obj_del_async(g_list_scr); g_list_scr = nullptr; }
@@ -121,6 +145,7 @@ void editor_close_to_list() {
   if (g_autosave) { lv_timer_del(g_autosave); g_autosave = nullptr; }
   save_current();
   g_edit_ta = nullptr;
+  g_title_ta = nullptr;
   lv_obj_t* es = g_edit_scr;
   g_edit_scr = nullptr;
   g_edit_id = -1;
@@ -128,34 +153,141 @@ void editor_close_to_list() {
   if (es) lv_obj_del_async(es);
 }
 
+// Esc from any editor field returns to the list (autosaved).
 void editor_key_cb(lv_event_t* e) {
   if (lv_event_get_key(e) == LV_KEY_ESC) editor_close_to_list();
+}
+
+// Enter on the one-line title jumps to the body.
+void title_ready_cb(lv_event_t*) {
+  if (g_edit_ta) lv_group_focus_obj(g_edit_ta);
+}
+
+// Fill the active size chip; apply its font to the body; persist.
+void size_set(int idx) {
+  if (idx < 0) idx = 0;
+  if (idx > 2) idx = 2;
+  g_size = idx;
+  config_set_text_size(idx);
+  if (g_edit_ta) lv_obj_set_style_text_font(g_edit_ta, kSizes[idx], 0);
+  for (int i = 0; i < 3; i++) {
+    if (!g_size_lbl[i]) continue;
+    const bool on = i == idx;
+    lv_obj_set_style_bg_color(g_size_lbl[i], on ? lv_color_black() : lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(g_size_lbl[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_color(g_size_lbl[i], on ? lv_color_white() : lv_color_black(), 0);
+  }
+}
+
+// The size bar is a single focus stop: a thick border shows focus; Left/Right
+// (or Enter to cycle) change the size live. Tab moves on to the title.
+void size_bar_focus_cb(lv_event_t* e) {
+  lv_obj_t* bar = lv_event_get_target(e);
+  const bool f = lv_event_get_code(e) == LV_EVENT_FOCUSED;
+  lv_obj_set_style_outline_width(bar, f ? 2 : 0, 0);   // outline: no layout shift
+  lv_obj_set_style_outline_color(bar, lv_color_black(), 0);
+  lv_obj_set_style_outline_pad(bar, 0, 0);
+}
+void size_bar_key_cb(lv_event_t* e) {
+  const uint32_t k = lv_event_get_key(e);
+  if (k == LV_KEY_LEFT || k == LV_KEY_UP) size_set(g_size - 1);
+  else if (k == LV_KEY_RIGHT || k == LV_KEY_DOWN) size_set(g_size + 1);
+  else if (k == LV_KEY_ENTER) size_set((g_size + 1) % 3);   // cycle
+  else if (k == LV_KEY_ESC) editor_close_to_list();
 }
 
 void open_editor(int id, const char* seed) {
   g_edit_id = id;
   g_edit_scr = lv_obj_create(nullptr);
   lv_obj_clear_flag(g_edit_scr, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_all(g_edit_scr, 0, 0);
 
-  lv_obj_t* ta = lv_textarea_create(g_edit_scr);
-  lv_obj_set_size(ta, ST7305_W, ST7305_H);
-  lv_obj_set_pos(ta, 0, 0);
-  lv_obj_set_style_radius(ta, 0, 0);
-  lv_obj_set_style_border_width(ta, 0, 0);
-  lv_obj_set_style_anim_time(ta, 0, LV_PART_CURSOR);  // steady (no blink) cursor
-  lv_textarea_set_placeholder_text(ta, "Write... (Esc = back)");
-  // seed != null -> new note from a template; else load the existing file.
-  lv_textarea_set_text(ta, seed ? seed : read_note(id).c_str());
-  lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
-  lv_obj_add_event_cb(ta, editor_key_cb, LV_EVENT_KEY, nullptr);
+  String title, body;
+  split_note(seed ? String(seed) : read_note(id), title, body);
 
   lv_group_t* g = lv_group_get_default();
   lv_group_remove_all_objs(g);
-  lv_group_add_obj(g, ta);
 
+  // --- fixed dark title header (constant, doesn't scroll with the body) ---
+  lv_obj_t* hdr = lv_obj_create(g_edit_scr);
+  lv_obj_set_size(hdr, ST7305_W, 32);
+  lv_obj_set_pos(hdr, 0, 0);
+  lv_obj_set_style_radius(hdr, 0, 0);
+  lv_obj_set_style_border_width(hdr, 0, 0);
+  lv_obj_set_style_pad_hor(hdr, 8, 0);
+  lv_obj_set_style_pad_ver(hdr, 0, 0);
+  lv_obj_set_style_bg_color(hdr, lv_color_black(), 0);
+  lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* tt = lv_textarea_create(hdr);
+  lv_obj_set_size(tt, ST7305_W - 16, 30);
+  lv_obj_align(tt, LV_ALIGN_LEFT_MID, 0, 0);
+  lv_textarea_set_one_line(tt, true);
+  lv_obj_set_style_bg_opa(tt, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(tt, 0, 0);
+  lv_obj_set_style_pad_all(tt, 2, 0);
+  lv_obj_set_style_text_color(tt, lv_color_white(), 0);
+  lv_obj_set_style_anim_time(tt, 0, LV_PART_CURSOR);
+  lv_textarea_set_placeholder_text(tt, "Title");
+  lv_textarea_set_text(tt, title.c_str());
+  lv_obj_add_event_cb(tt, editor_key_cb, LV_EVENT_KEY, nullptr);
+  lv_obj_add_event_cb(tt, title_ready_cb, LV_EVENT_READY, nullptr);  // Enter -> body
+  lv_group_add_obj(g, tt);
+  g_title_ta = tt;
+
+  // --- bounded body box ---
+  lv_obj_t* ta = lv_textarea_create(g_edit_scr);
+  lv_obj_set_size(ta, ST7305_W - 12, ST7305_H - 32 - 30 - 8);
+  lv_obj_set_pos(ta, 6, 36);
+  lv_obj_set_style_radius(ta, 2, 0);
+  lv_obj_set_style_border_width(ta, 1, 0);
+  lv_obj_set_style_border_color(ta, lv_color_black(), 0);
+  lv_obj_set_style_anim_time(ta, 0, LV_PART_CURSOR);  // steady (no blink) cursor
+  lv_textarea_set_placeholder_text(ta, "Write... (Tab = size, Esc = back)");
+  lv_textarea_set_text(ta, body.c_str());
+  lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
+  lv_obj_add_event_cb(ta, editor_key_cb, LV_EVENT_KEY, nullptr);
+  lv_group_add_obj(g, ta);
   g_edit_ta = ta;
+
+  // --- bottom size bar: ONE focusable control (Tab-stop), Left/Right change ---
+  lv_obj_t* bar = lv_obj_create(g_edit_scr);
+  lv_obj_set_size(bar, ST7305_W, 28);
+  lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_TOP, 0);
+  lv_obj_set_style_border_width(bar, 1, 0);
+  lv_obj_set_style_border_color(bar, lv_color_black(), 0);
+  lv_obj_set_style_radius(bar, 0, 0);
+  lv_obj_set_style_pad_hor(bar, 8, 0);
+  lv_obj_set_style_pad_ver(bar, 1, 0);
+  lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(bar, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(bar, 6, 0);
+
+  lv_obj_t* cap = lv_label_create(bar);
+  lv_label_set_text(cap, "Text size");
+  for (int i = 0; i < 3; i++) {
+    lv_obj_t* l = lv_label_create(bar);
+    lv_label_set_text(l, kSizeName[i]);
+    lv_obj_set_style_pad_hor(l, 8, 0);
+    lv_obj_set_style_pad_ver(l, 2, 0);
+    lv_obj_set_style_radius(l, 2, 0);
+    g_size_lbl[i] = l;
+  }
+  lv_obj_add_event_cb(bar, size_bar_key_cb, LV_EVENT_KEY, nullptr);
+  lv_obj_add_event_cb(bar, size_bar_focus_cb, LV_EVENT_FOCUSED, nullptr);
+  lv_obj_add_event_cb(bar, size_bar_focus_cb, LV_EVENT_DEFOCUSED, nullptr);
+  lv_group_add_obj(g, bar);
+
   lv_scr_load(g_edit_scr);
-  lv_group_focus_obj(ta);
+  g_size = config_get_text_size();
+  size_set(g_size);                          // body font + active chip fill
+  // New note (from a template) starts on the title; existing note on the body.
+  lv_group_focus_obj(seed ? g_title_ta : g_edit_ta);
   g_autosave = lv_timer_create(autosave_cb, 3000, nullptr);
 }
 
