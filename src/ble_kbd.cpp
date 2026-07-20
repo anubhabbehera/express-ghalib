@@ -28,6 +28,27 @@ void enqueue_key(uint32_t k) {
   portEXIT_CRITICAL(&g_qmux);
 }
 
+// Drop all queued keys. Used on repeat-key release so buffered repeats (the
+// display flush drains slower than they're generated) don't over-run after
+// you lift off.
+void flush_queue() {
+  portENTER_CRITICAL(&g_qmux);
+  g_qhead = g_qtail = 0;
+  portEXIT_CRITICAL(&g_qmux);
+}
+
+// --- key auto-repeat (held key) --------------------------------------------
+// The keyboard only sends a report on change, so a held key produces no further
+// notifications — we synthesise repeats in ble_loop() from the last held key,
+// with backspace/del accelerating so a long hold deletes fast.
+constexpr uint32_t REPEAT_DELAY_MS = 400;   // hold this long before repeating
+constexpr uint32_t REPEAT_BASE_MS  = 90;    // steady repeat interval
+constexpr uint32_t REPEAT_MIN_MS   = 25;    // fastest (accelerated) interval
+volatile uint32_t g_held_key   = 0;         // decoded key currently held (0 = none)
+uint8_t           g_held_usage = 0;         // its HID usage (to detect release)
+volatile uint32_t g_next_repeat = 0;
+int               g_repeat_n = 0;
+
 // HID keyboard usage code -> LVGL key (LV_KEY_*) or ASCII char. 0 = ignore.
 uint32_t usage_to_key(uint8_t u, bool shift) {
   if (u >= 0x04 && u <= 0x1D) { char c = 'a' + (u - 0x04); return shift ? c - 32 : c; }
@@ -111,12 +132,32 @@ void onNotify(NimBLERemoteCharacteristic*, uint8_t* data, size_t len, bool) {
                     (unsigned long)k);
       if (k) {
         enqueue_key(k);
+        // Arm auto-repeat for this key (Esc excluded — holding it must not
+        // repeatedly exit screens). Last new key-down wins.
+        if (k != LV_KEY_ESC) {
+          g_held_usage  = usage;
+          g_held_key    = k;
+          g_next_repeat = millis() + REPEAT_DELAY_MS;
+          g_repeat_n    = 0;
+        }
         if (k >= 0x20 && k < 0x7F)
           snprintf(g_last_report, sizeof(g_last_report), "key: '%c'", (char)k);
         else
           snprintf(g_last_report, sizeof(g_last_report), "key: 0x%02lX",
                    (unsigned long)k);
       }
+    }
+  }
+  // Stop repeating once the held key's bit clears (released or replaced). If it
+  // had been repeating, flush the queued repeats so it stops the instant you
+  // lift off instead of draining a backlog (e.g. extra deletes after backspace).
+  if (g_held_key) {
+    const int hb = (g_held_usage / 8) + 1;
+    const bool still = hb < n && (data[hb] & (1 << (g_held_usage % 8)));
+    if (!still) {
+      if (g_repeat_n > 0) flush_queue();
+      g_held_key = 0;
+      g_repeat_n = 0;
     }
   }
   memcpy(prev, data, n);
@@ -294,6 +335,18 @@ void ble_init() {
 }
 
 void ble_loop() {
+  // Auto-repeat the held key; backspace/del accelerate the longer you hold.
+  if (g_held_key && (int32_t)(millis() - g_next_repeat) >= 0) {
+    enqueue_key(g_held_key);
+    g_repeat_n++;
+    uint32_t iv = REPEAT_BASE_MS;
+    if (g_held_key == LV_KEY_BACKSPACE || g_held_key == LV_KEY_DEL) {
+      const int fast = (int)REPEAT_BASE_MS - g_repeat_n * 10;
+      iv = fast < (int)REPEAT_MIN_MS ? REPEAT_MIN_MS : fast;
+    }
+    g_next_repeat = millis() + iv;
+  }
+
   if (g_pair_request) { g_pair_request = false; enter_pairing(); }
   if (g_pairing && (int32_t)(millis() - g_pair_deadline) >= 0) finish_pairing();
   if (g_state == HAVE_TARGET) do_connect();
