@@ -75,6 +75,19 @@ NimBLEClient* g_client = nullptr;
 char g_status[48] = "scanning...";
 char g_last_report[48] = "";
 
+// --- re-pairing mode -------------------------------------------------------
+// A long-press requests pairing (main task sets the flag); ble_loop() performs
+// the disconnect + forget-bonds, then scans a fixed window and picks the HID
+// with the strongest RSSI so proximity selects the intended keyboard.
+constexpr uint32_t PAIR_WINDOW_MS = 3000;
+volatile bool g_pair_request = false;  // set by ble_kbd_start_pairing()
+volatile bool g_pairing      = false;  // true during the RSSI window
+uint32_t      g_pair_deadline = 0;     // millis() when the window closes
+NimBLEAddress g_pair_best;             // strongest-RSSI HID so far
+bool          g_pair_have_best = false;
+int           g_pair_best_rssi = -128;
+char          g_pair_best_name[32] = "";
+
 void set_status(const char* s) { strncpy(g_status, s, sizeof(g_status) - 1); }
 
 // --- NKRO bitmap keyboard report (8BitDo report-mode, 16 bytes) -----------
@@ -147,6 +160,23 @@ class ScanCB : public NimBLEScanCallbacks {
                   name.empty() ? "(no name)" : name.c_str(),
                   d->getAddress().toString().c_str(), d->getRSSI());
 
+    // Re-pairing: don't lock the first HID — collect the whole window and keep
+    // the strongest signal, so bringing the new keyboard close selects it.
+    if (g_pairing) {
+      const int rssi = d->getRSSI();
+      if (!g_pair_have_best || rssi > g_pair_best_rssi) {
+        g_pair_best      = d->getAddress();
+        g_pair_best_rssi = rssi;
+        g_pair_have_best = true;
+        strncpy(g_pair_best_name, name.empty() ? "keyboard" : name.c_str(),
+                sizeof(g_pair_best_name) - 1);
+        g_pair_best_name[sizeof(g_pair_best_name) - 1] = 0;
+        snprintf(g_status, sizeof(g_status), "pairing: found %s",
+                 g_pair_best_name);
+      }
+      return;  // decision is made in ble_loop() when the window closes
+    }
+
     if (!g_have_target) {
       g_target = d->getAddress();
       g_have_target = true;
@@ -201,6 +231,50 @@ void do_connect() {
   snprintf(g_status, sizeof(g_status), "CONNECTED (typing ready)");
   g_state = CONNECTED;
 }
+
+// Begin a re-pairing window: tear down any active link, forget ALL bonds, and
+// restart the scan in RSSI-collection mode. Runs on the main task.
+void enter_pairing() {
+  Serial.println("[BLE] re-pairing requested: forgetting bonds, rescanning");
+  NimBLEDevice::getScan()->stop();
+
+  if (g_client) {
+    if (g_client->isConnected()) g_client->disconnect();
+    NimBLEDevice::deleteClient(g_client);
+    g_client = nullptr;
+  }
+  NimBLEDevice::deleteAllBonds();  // the missing "forget" — start clean
+
+  g_have_target    = false;
+  g_pair_have_best = false;
+  g_pair_best_rssi = -128;
+  g_pair_best_name[0] = 0;
+  g_state       = SCANNING;
+  g_pairing     = true;
+  g_pair_deadline = millis() + PAIR_WINDOW_MS;
+  set_status("pairing: bring kbd close...");
+
+  NimBLEDevice::getScan()->start(0);
+}
+
+// Close the RSSI window: connect the strongest candidate, or fall back to the
+// normal first-seen auto-scan if nothing showed up.
+void finish_pairing() {
+  g_pairing = false;
+  if (g_pair_have_best) {
+    g_target       = g_pair_best;
+    g_have_target  = true;
+    g_state        = HAVE_TARGET;
+    NimBLEDevice::getScan()->stop();
+    snprintf(g_status, sizeof(g_status), "pairing %s...", g_pair_best_name);
+    Serial.printf("[BLE] pairing target: %s (rssi=%d)\n",
+                  g_pair_best.toString().c_str(), g_pair_best_rssi);
+  } else {
+    set_status("no keyboard found; scanning");
+    Serial.println("[BLE] pairing window empty; back to normal scan");
+    // Scan is still running; onResult will resume first-seen auto-connect.
+  }
+}
 }  // namespace
 
 void ble_init() {
@@ -220,6 +294,8 @@ void ble_init() {
 }
 
 void ble_loop() {
+  if (g_pair_request) { g_pair_request = false; enter_pairing(); }
+  if (g_pairing && (int32_t)(millis() - g_pair_deadline) >= 0) finish_pairing();
   if (g_state == HAVE_TARGET) do_connect();
 }
 
@@ -232,6 +308,10 @@ String ble_status_text() {
 bool ble_connected() { return g_state == CONNECTED; }
 
 void ble_kbd_inject(uint32_t k) { enqueue_key(k); }
+
+void ble_kbd_start_pairing() { g_pair_request = true; }
+
+bool ble_kbd_pairing() { return g_pairing || g_pair_request; }
 
 bool ble_kbd_pop(uint32_t* out) {
   bool ok = false;
