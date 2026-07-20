@@ -365,13 +365,14 @@ void setup() {
   settings_boot_sync();// if Wi-Fi creds saved: connect + NTP-sync the RTC, then off
   ble_init();          // start NimBLE central scan + auto-connect
   reminders_init();    // background reminder scheduler (RTC vs calendar events)
+  music_init();        // audio playback task (core 0) + command queue
   lv_timer_create(pairing_timer_cb, 200, nullptr);  // BLE re-pair overlay
 }
 
 void loop() {
   ble_loop();          // drive the BLE connect state machine
   buttons_poll();      // physical KEY/BOOT buttons
-  music_task();        // stream the next WAV chunk if a track is playing
   lv_timer_handler();  // LVGL tick is driven by millis() via LV_TICK_CUSTOM
+                       // (music playback runs in its own task; see music_init)
   delay(5);
 }

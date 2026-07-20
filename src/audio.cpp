@@ -147,3 +147,9 @@ void audio_play_off() { digitalWrite(PIN_PA, LOW); g_playing = false; }
 size_t audio_write(const uint8_t* buf, size_t len) {
   return g_ok ? g_i2s.write(buf, len) : 0;
 }
+
+void audio_set_volume(uint8_t percent) {
+  if (!g_ok) return;
+  if (percent > 100) percent = 100;
+  es8311_write(0x32, (uint8_t)((uint16_t)percent * 255 / 100));  // 0x32 DAC vol
+}
