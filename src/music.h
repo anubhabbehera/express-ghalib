@@ -10,3 +10,6 @@
 
 // Open the Music app: mounts the SD card (lazily) and shows the /music list.
 void music_open();
+
+// Pump WAV streaming (one chunk per call). Call from loop(); no-op when idle.
+void music_task();

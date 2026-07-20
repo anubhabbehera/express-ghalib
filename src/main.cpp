@@ -11,6 +11,7 @@
 #include "ble_kbd.h"
 #include "buttons.h"
 #include "launcher.h"
+#include "music.h"
 #include "reminders.h"
 #include "rtc.h"
 #include "settings.h"
@@ -370,6 +371,7 @@ void setup() {
 void loop() {
   ble_loop();          // drive the BLE connect state machine
   buttons_poll();      // physical KEY/BOOT buttons
+  music_task();        // stream the next WAV chunk if a track is playing
   lv_timer_handler();  // LVGL tick is driven by millis() via LV_TICK_CUSTOM
   delay(5);
 }

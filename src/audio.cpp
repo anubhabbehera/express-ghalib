@@ -24,6 +24,8 @@ constexpr uint32_t SAMPLE_RATE = 16000;      // MCLK = 256*fs = 4.096 MHz
 
 I2SClass g_i2s;
 bool     g_ok = false;                       // codec detected + I2S up
+uint32_t g_rate = SAMPLE_RATE;               // current I2S sample rate
+bool     g_playing = false;                  // music streaming in progress
 
 void es8311_write(uint8_t reg, uint8_t val) {
   Wire.beginTransmission(ES8311_ADDR);
@@ -98,7 +100,8 @@ void audio_init() {
 }
 
 void audio_beep() {
-  if (!g_ok) return;
+  if (!g_ok || g_playing) return;            // don't fight active music playback
+  audio_prepare(SAMPLE_RATE);                // beep tone assumes 16 kHz
 
   digitalWrite(PIN_PA, HIGH);                // enable amp
   delay(2);                                  // let it settle
@@ -118,4 +121,29 @@ void audio_beep() {
 
   delay(20);                                 // let the DMA tail drain
   digitalWrite(PIN_PA, LOW);                 // amp off (no idle hiss)
+}
+
+bool audio_prepare(uint32_t rate) {
+  if (!g_ok) return false;
+  if (rate == g_rate) return true;
+  g_i2s.end();
+  if (!g_i2s.begin(I2S_MODE_STD, rate, I2S_DATA_BIT_WIDTH_16BIT,
+                   I2S_SLOT_MODE_STEREO)) {
+    Serial.printf("[AUD] I2S re-begin @%lu failed\n", (unsigned long)rate);
+    g_ok = false;
+    return false;
+  }
+  // Only the DAC oversample-ratio register tracks the rate; MCLK stays 256xfs so
+  // the LRCK/BCLK dividers are unchanged. (16k uses 0x20, higher rates 0x10.)
+  es8311_write(0x04, rate <= 24000 ? 0x20 : 0x10);
+  g_rate = rate;
+  Serial.printf("[AUD] rate -> %lu Hz\n", (unsigned long)rate);
+  return true;
+}
+
+void audio_play_on()  { if (g_ok) { digitalWrite(PIN_PA, HIGH); g_playing = true; } }
+void audio_play_off() { digitalWrite(PIN_PA, LOW); g_playing = false; }
+
+size_t audio_write(const uint8_t* buf, size_t len) {
+  return g_ok ? g_i2s.write(buf, len) : 0;
 }
