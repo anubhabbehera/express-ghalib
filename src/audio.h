@@ -29,3 +29,6 @@ void audio_play_off();
 
 // Write 16-bit stereo PCM to I2S. Blocks until the DMA accepts it (backpressure).
 size_t audio_write(const uint8_t* buf, size_t len);
+
+// Set DAC output volume, 0..100 % (ES8311 register 0x32).
+void audio_set_volume(uint8_t percent);
