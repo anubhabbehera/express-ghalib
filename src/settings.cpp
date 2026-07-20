@@ -16,13 +16,18 @@
 
 namespace {
 
+lv_obj_t* g_menu_scr = nullptr;   // Settings home: Wi-Fi | Time zone
 lv_obj_t* g_scan_scr = nullptr;
 lv_obj_t* g_pass_scr = nullptr;
+lv_obj_t* g_tz_scr   = nullptr;   // timezone entry screen
+lv_obj_t* g_tz_ta    = nullptr;
 lv_obj_t* g_status   = nullptr;   // status label on the password screen
 lv_obj_t* g_pass_ta  = nullptr;
 char      g_ssid[40] = {0};
 
 void build_scan();  // fwd
+void build_menu();  // fwd
+void build_tz();    // fwd
 
 void set_status(const String& s) {
   if (g_status) lv_label_set_text(g_status, s.c_str());
@@ -106,9 +111,11 @@ bool wifi_connect_and_sync(const char* ssid, const char* pass) {
 void settings_teardown() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+  if (g_menu_scr) { lv_obj_del_async(g_menu_scr); g_menu_scr = nullptr; }
   if (g_pass_scr) { lv_obj_del_async(g_pass_scr); g_pass_scr = nullptr; }
   if (g_scan_scr) { lv_obj_del_async(g_scan_scr); g_scan_scr = nullptr; }
-  g_status = g_pass_ta = nullptr;
+  if (g_tz_scr)   { lv_obj_del_async(g_tz_scr);   g_tz_scr = nullptr; }
+  g_status = g_pass_ta = g_tz_ta = nullptr;
 }
 
 // --- password screen -------------------------------------------------------
@@ -195,8 +202,12 @@ void ssid_key_cb(lv_event_t* e) {
     lv_group_focus_next(g);
   else if (k == LV_KEY_UP || k == LV_KEY_LEFT || k == LV_KEY_PREV)
     lv_group_focus_prev(g);
-  else if (k == LV_KEY_ESC)
-    launcher_go_home();
+  else if (k == LV_KEY_ESC) {           // back to the Settings menu
+    lv_obj_t* old = g_scan_scr;
+    g_scan_scr = nullptr;
+    build_menu();
+    if (old) lv_obj_del_async(old);
+  }
 }
 
 // SSID strings must outlive the row; keep them here.
@@ -252,12 +263,132 @@ void build_scan() {
   if (first) lv_group_focus_obj(first);
 }
 
+// --- timezone entry --------------------------------------------------------
+int parse_tz(const char* s) {
+  while (*s == ' ') s++;
+  int sign = 1;
+  if (*s == '+') s++;
+  else if (*s == '-') { sign = -1; s++; }
+  int hh = 0, mm = 0;
+  sscanf(s, "%d:%d", &hh, &mm);          // "5:30" or bare "5"
+  return sign * (hh * 60 + mm);
+}
+
+void tz_back_to_menu() {
+  lv_obj_t* old = g_tz_scr;
+  g_tz_scr = nullptr;
+  g_tz_ta = nullptr;
+  build_menu();
+  if (old) lv_obj_del_async(old);
+}
+
+// Deferred so the Enter key-release settles on the tz field first, rather than
+// leaking a click onto the menu's focused row (same fix as the Wi-Fi connect).
+void tz_deferred_back(lv_timer_t*) { tz_back_to_menu(); }
+
+void tz_save_cb(lv_event_t*) {           // Enter on the one-line field
+  if (g_tz_ta) config_set_tz_offset(parse_tz(lv_textarea_get_text(g_tz_ta)));
+  lv_timer_t* t = lv_timer_create(tz_deferred_back, 60, nullptr);
+  lv_timer_set_repeat_count(t, 1);       // one-shot; auto-deletes after firing
+}
+void tz_key_cb(lv_event_t* e) {
+  if (lv_event_get_key(e) == LV_KEY_ESC) tz_back_to_menu();
+}
+
+void build_tz() {
+  g_tz_scr = lv_obj_create(nullptr);
+  lv_obj_clear_flag(g_tz_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* title = lv_label_create(g_tz_scr);
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_label_set_text(title, "Time zone");
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 8);
+
+  lv_group_t* g = lv_group_get_default();
+  lv_group_remove_all_objs(g);
+
+  lv_obj_t* ta = lv_textarea_create(g_tz_scr);
+  lv_obj_set_width(ta, ST7305_W - 24);
+  lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 48);
+  lv_textarea_set_one_line(ta, true);
+  lv_obj_set_style_anim_time(ta, 0, LV_PART_CURSOR);
+  char cur[16];
+  const int m = config_get_tz_offset(), am = m < 0 ? -m : m;
+  snprintf(cur, sizeof(cur), "%c%d:%02d", m < 0 ? '-' : '+', am / 60, am % 60);
+  lv_textarea_set_text(ta, cur);
+  lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
+  lv_obj_add_event_cb(ta, tz_key_cb, LV_EVENT_KEY, nullptr);      // Esc = back
+  lv_obj_add_event_cb(ta, tz_save_cb, LV_EVENT_READY, nullptr);   // Enter = save
+  lv_group_add_obj(g, ta);
+  g_tz_ta = ta;
+
+  lv_obj_t* hint = lv_label_create(g_tz_scr);
+  lv_label_set_text(hint, "Offset from UTC, e.g. +5:30 or -8:00\nEnter = save   Esc = back");
+  lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 92);
+
+  lv_scr_load(g_tz_scr);
+  lv_group_focus_obj(ta);
+}
+
+// --- Settings menu (Wi-Fi | Time zone) -------------------------------------
+void menu_wifi_cb(lv_event_t*) {
+  lv_obj_t* old = g_menu_scr; g_menu_scr = nullptr;
+  build_scan();
+  if (old) lv_obj_del_async(old);
+}
+void menu_tz_cb(lv_event_t*) {
+  lv_obj_t* old = g_menu_scr; g_menu_scr = nullptr;
+  build_tz();
+  if (old) lv_obj_del_async(old);
+}
+void menu_key_cb(lv_event_t* e) {
+  const uint32_t k = lv_event_get_key(e);
+  lv_group_t* g = lv_group_get_default();
+  if (k == LV_KEY_DOWN || k == LV_KEY_RIGHT || k == LV_KEY_NEXT)
+    lv_group_focus_next(g);
+  else if (k == LV_KEY_UP || k == LV_KEY_LEFT || k == LV_KEY_PREV)
+    lv_group_focus_prev(g);
+  else if (k == LV_KEY_ESC)
+    launcher_go_home();
+}
+
+void build_menu() {
+  g_menu_scr = lv_obj_create(nullptr);
+  lv_obj_clear_flag(g_menu_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* title = lv_label_create(g_menu_scr);
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_label_set_text(title, "Settings");
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
+
+  lv_obj_t* cont = lv_obj_create(g_menu_scr);
+  lv_obj_set_size(cont, ST7305_W, ST7305_H - 36);
+  lv_obj_set_pos(cont, 0, 36);
+  lv_obj_set_style_border_width(cont, 0, 0);
+  lv_obj_set_style_pad_all(cont, 0, 0);
+  lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+
+  lv_group_t* g = lv_group_get_default();
+  lv_group_remove_all_objs(g);
+
+  lv_obj_t* r1 = make_row(cont, LV_SYMBOL_WIFI "  Wi-Fi setup", nullptr,
+                          menu_wifi_cb, menu_key_cb);
+  char tz[28];
+  const int m = config_get_tz_offset(), am = m < 0 ? -m : m;
+  snprintf(tz, sizeof(tz), LV_SYMBOL_SETTINGS "  Time zone   %c%d:%02d",
+           m < 0 ? '-' : '+', am / 60, am % 60);
+  make_row(cont, tz, nullptr, menu_tz_cb, menu_key_cb);
+
+  lv_scr_load(g_menu_scr);
+  lv_group_focus_obj(r1);
+}
+
 }  // namespace
 
 void settings_open() {
   launcher_set_leave_hook(settings_teardown);
-  g_scan_scr = g_pass_scr = nullptr;
-  build_scan();
+  g_menu_scr = g_scan_scr = g_pass_scr = g_tz_scr = nullptr;
+  build_menu();
 }
 
 void settings_boot_sync() {

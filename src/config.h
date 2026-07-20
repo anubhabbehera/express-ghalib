@@ -9,3 +9,7 @@ bool config_get_wifi(String& ssid, String& pass);
 
 // Persist Wi-Fi credentials.
 void config_set_wifi(const char* ssid, const char* pass);
+
+// Local timezone offset from UTC, in minutes (e.g. +330 = IST). Default 0.
+int  config_get_tz_offset();
+void config_set_tz_offset(int minutes);
