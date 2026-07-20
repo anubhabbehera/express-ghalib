@@ -12,6 +12,7 @@
 namespace {
 St7305Pins g_pins{};
 SPIClass* g_spi = nullptr;
+volatile uint32_t g_flush_us = 0;   // SPI transfer time of the last flush
 SPISettings g_spi_cfg(ST7305_SPI_HZ, MSBFIRST, SPI_MODE0);
 
 // WAVESHARE_400X300 address window (from the reference driver).
@@ -115,6 +116,10 @@ void st7305_flush_full(const uint8_t* buf) {
   dc_cmd(); cs_lo();
   g_spi->transfer(0x2C);
   dc_data();
+  const uint32_t t0 = micros();
   g_spi->writeBytes(buf, ST7305_BUF_BYTES);
+  g_flush_us = micros() - t0;
   cs_hi();
 }
+
+uint32_t st7305_last_flush_us() { return g_flush_us; }

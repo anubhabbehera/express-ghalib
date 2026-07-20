@@ -48,3 +48,6 @@ void st7305_buf_set(uint8_t* buf, uint16_t x, uint16_t y, bool on);
 
 // Push a full native framebuffer to the panel (set address window + mem-write).
 void st7305_flush_full(const uint8_t* buf);
+
+// Duration (microseconds) of the SPI transfer in the last st7305_flush_full().
+uint32_t st7305_last_flush_us();
