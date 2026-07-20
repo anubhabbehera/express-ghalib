@@ -6,6 +6,7 @@
 #include <lvgl.h>
 #include "ble_kbd.h"
 #include "launcher.h"
+#include "reminders.h"
 
 namespace {
 constexpr int PIN_BOOT = 0;    // BOOT button (active-low)
@@ -81,11 +82,17 @@ void buttons_poll() {
     Serial.println("[BTN] KEY (hold) -> BLE pairing mode");
     ble_kbd_start_pairing();
   } else if (key_tap) {
-    Serial.println("[BTN] KEY -> Back (Esc)");
-    ble_kbd_inject(LV_KEY_ESC);
+    if (reminders_alert_active()) {  // a reminder is showing -> KEY dismisses it
+      Serial.println("[BTN] KEY -> dismiss reminder");
+      reminders_dismiss();
+    } else {
+      Serial.println("[BTN] KEY -> Back (Esc)");
+      ble_kbd_inject(LV_KEY_ESC);
+    }
   }
   if (pressed(g_boot)) {
     Serial.println("[BTN] BOOT -> Home");
+    reminders_dismiss();  // clear any alert on the way home (no-op if none)
     launcher_go_home();
   }
 }
