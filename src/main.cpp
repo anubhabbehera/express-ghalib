@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <lvgl.h>
+#include "audio.h"
 #include "ble_kbd.h"
 #include "buttons.h"
 #include "launcher.h"
@@ -358,6 +359,7 @@ void setup() {
   buttons_init();      // physical KEY/BOOT buttons
   storage_init();      // mount LittleFS for notes/config
   rtc_init();          // PCF85063 RTC (I2C) — dates for Daily Log
+  audio_init();        // ES8311 codec + I2S (shares the RTC's I2C bus)
   launcher_build();    // home-screen app launcher (keyboard-navigated)
   settings_boot_sync();// if Wi-Fi creds saved: connect + NTP-sync the RTC, then off
   ble_init();          // start NimBLE central scan + auto-connect
