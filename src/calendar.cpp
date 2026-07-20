@@ -181,9 +181,9 @@ void open_editor(int id, const char* seed) {
 
 // --- agenda list -----------------------------------------------------------
 void new_event_cb(lv_event_t*) {
-  // Prefill line 1 with the current date/time so editing is minimal.
+  // Prefill line 1 with the current local date/time so editing is minimal.
   char now[17];
-  rtc_datetime(now);                  // "YYYY-MM-DD HH:MM"
+  rtc_local_datetime(now);            // local "YYYY-MM-DD HH:MM"
   String seed = String(now) + "\n";   // empty title line to fill in
   open_editor(next_id(), seed.c_str());
 }

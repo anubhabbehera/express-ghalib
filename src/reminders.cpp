@@ -59,7 +59,7 @@ std::vector<Event> load_events() {
 
 String now_str() {
   char dt[17];
-  rtc_datetime(dt);  // "YYYY-MM-DD HH:MM"
+  rtc_local_datetime(dt);  // local "YYYY-MM-DD HH:MM" (matches how events are entered)
   return String(dt);
 }
 

@@ -6,6 +6,8 @@
 #include "rtc.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <time.h>
+#include "config.h"
 
 namespace {
 constexpr uint8_t ADDR = 0x51;
@@ -51,6 +53,8 @@ void seed_from_build_time() {
 }  // namespace
 
 void rtc_init() {
+  setenv("TZ", "UTC0", 1);  // RTC holds UTC; mktime() normalization must be UTC
+  tzset();
   pinMode(13, INPUT_PULLUP);
   pinMode(14, INPUT_PULLUP);
   Wire.begin(13, 14, 100000);
@@ -82,4 +86,19 @@ void rtc_datetime(char* out) {
   const uint8_t y  = bcd2dec(read_reg(0x0A));
   (void)s;
   snprintf(out, 17, "20%02d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+}
+
+void rtc_local_datetime(char* out) {
+  struct tm tm = {};
+  tm.tm_sec  = bcd2dec(read_reg(0x04) & 0x7F);
+  tm.tm_min  = bcd2dec(read_reg(0x05) & 0x7F);
+  tm.tm_hour = bcd2dec(read_reg(0x06) & 0x3F);
+  tm.tm_mday = bcd2dec(read_reg(0x07) & 0x3F);
+  tm.tm_mon  = bcd2dec(read_reg(0x09) & 0x1F) - 1;
+  tm.tm_year = 100 + bcd2dec(read_reg(0x0A));   // 2000+yy, as years since 1900
+  tm.tm_min += config_get_tz_offset();          // shift; mktime rolls the overflow
+  tm.tm_isdst = 0;
+  mktime(&tm);                                   // normalize in place (TZ=UTC0)
+  snprintf(out, 17, "%04d-%02d-%02d %02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1,
+           tm.tm_mday, tm.tm_hour, tm.tm_min);
 }
