@@ -27,3 +27,11 @@ bool ble_kbd_pop(uint32_t* key_out);
 
 // Inject a key into the input queue from another source (e.g. physical buttons).
 void ble_kbd_inject(uint32_t lvgl_key);
+
+// Enter re-pairing mode: disconnect + forget all bonds, then scan for a short
+// window and bond the STRONGEST-RSSI keyboard (bring the new one close). Safe to
+// call from the main task (e.g. a long-press handler); the work runs in ble_loop.
+void ble_kbd_start_pairing();
+
+// True while a re-pairing window is in progress (for UI + re-entrancy guards).
+bool ble_kbd_pairing();
