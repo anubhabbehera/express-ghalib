@@ -23,3 +23,16 @@ void config_set_wifi(const char* ssid, const char* pass) {
   g_prefs.putString("pass", pass);
   g_prefs.end();
 }
+
+int config_get_tz_offset() {
+  g_prefs.begin(NS, true /*read-only*/);
+  const int m = g_prefs.getInt("tz", 0);
+  g_prefs.end();
+  return m;
+}
+
+void config_set_tz_offset(int minutes) {
+  g_prefs.begin(NS, false);
+  g_prefs.putInt("tz", minutes);
+  g_prefs.end();
+}
