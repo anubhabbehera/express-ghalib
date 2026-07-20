@@ -36,3 +36,16 @@ void config_set_tz_offset(int minutes) {
   g_prefs.putInt("tz", minutes);
   g_prefs.end();
 }
+
+int config_get_text_size() {
+  g_prefs.begin(NS, true /*read-only*/);
+  const int s = g_prefs.getInt("txtsize", 1);
+  g_prefs.end();
+  return s;
+}
+
+void config_set_text_size(int size) {
+  g_prefs.begin(NS, false);
+  g_prefs.putInt("txtsize", size);
+  g_prefs.end();
+}
