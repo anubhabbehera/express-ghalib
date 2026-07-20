@@ -10,6 +10,7 @@
 #include "ble_kbd.h"
 #include "buttons.h"
 #include "launcher.h"
+#include "reminders.h"
 #include "rtc.h"
 #include "settings.h"
 #include "shtc3.h"
@@ -360,6 +361,7 @@ void setup() {
   launcher_build();    // home-screen app launcher (keyboard-navigated)
   settings_boot_sync();// if Wi-Fi creds saved: connect + NTP-sync the RTC, then off
   ble_init();          // start NimBLE central scan + auto-connect
+  reminders_init();    // background reminder scheduler (RTC vs calendar events)
   lv_timer_create(pairing_timer_cb, 200, nullptr);  // BLE re-pair overlay
 }
 
