@@ -19,6 +19,7 @@
 #include <lvgl.h>
 #include <algorithm>
 #include <vector>
+#include "audio.h"
 #include "launcher.h"
 #include "rtc.h"
 #include "st7305.h"
@@ -103,6 +104,8 @@ void raise_alert(const String& when, const String& title) {
   lv_label_set_text(g_alert_label, (short_when(when) + "\n" + title).c_str());
   g_alert_deadline = millis() + ALERT_TIMEOUT_MS;
   Serial.printf("[REM] alert: %s  %s\n", when.c_str(), title.c_str());
+  lv_refr_now(nullptr);  // paint the overlay before the (blocking) beep
+  audio_beep();          // audible half of the reminder (visible + audible)
 }
 
 // --- scheduler --------------------------------------------------------------
