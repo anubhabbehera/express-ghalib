@@ -555,6 +555,14 @@ void move_selection(int delta) {
   }
 }
 
+// Open the selected day one tick later: keeping the grid focused through the
+// Enter *release* stops that release from leaking as a click onto the day
+// view's "New event" row (same deferral used in Settings for tz-save).
+void open_day_deferred(lv_timer_t* t) {
+  lv_timer_del(t);
+  build_day(g_view_y, g_view_m, g_sel_d);
+}
+
 void month_key_cb(lv_event_t* e) {
   switch (lv_event_get_key(e)) {
     case LV_KEY_LEFT:  move_selection(-1); break;
@@ -563,7 +571,7 @@ void month_key_cb(lv_event_t* e) {
     case LV_KEY_DOWN:  move_selection(+7); break;
     case LV_KEY_PREV:  move_selection(-days_in_month(g_view_y, g_view_m)); break;
     case LV_KEY_NEXT:  move_selection(+days_in_month(g_view_y, g_view_m)); break;
-    case LV_KEY_ENTER: build_day(g_view_y, g_view_m, g_sel_d); break;
+    case LV_KEY_ENTER: lv_timer_create(open_day_deferred, 40, nullptr); break;
     case LV_KEY_ESC:   launcher_go_home(); break;  // -> calendar_teardown()
   }
 }
