@@ -189,3 +189,76 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 2. ~~Confirm the RLCD's actual **color depth**~~ — **Resolved: ST7305 is 1-bit monochrome.** LVGL uses `LV_COLOR_DEPTH 1`; design a pure black/white theme. (Verify in M0 whether the panel exposes any grayscale via ST7305 4-level mode.)
 3. Music format scope — MP3 only, or WAV/AAC too?
 4. Is Wi-Fi in scope at all for v1 (NTP only), or fully offline?
+
+## 7. Status + forward roadmap (M6+)
+
+> Status as of 2026-07-27: **M0–M6 complete.** The milestone list above drifted:
+> M5 became *perf + polish* (LVGL direct_mode 6.4× redraw, status bar w/ clock +
+> battery + timezone), M6 was a UX pass (Notes editor, calendar month grid,
+> reminders UX, music UX — branch `m6-ux`), and power management moved to M7.
+
+The roadmap below is informed by [PocketMage PDA](https://github.com/TailsmanDesign/PocketMage_PDA)
+(Apache-2.0 — code/ideas portable), a shipped ESP32-S3 E-Ink PDA with a very
+similar philosophy. Its app roster: TXT, FileWiz, USB transfer, Settings,
+Tasks, Calendar (month/week/day + repeat grammar), Journal (date-keyed),
+Lexicon (SD dictionary), AppLoader (OTA .tar apps), Terminal (Wrench
+scripting), COMM (ESP-NOW mesh chat).
+
+### Compatibility triage vs our hardware (BLE kbd, 300×400 RLCD, SD, ES8311, PCF85063)
+
+- **Port / adapt:** Tasks, Journal, Lexicon, file manager, USB-MSC file
+  transfer, timers/alarms, e-book reader, home command bar, recurring events,
+  sleep/wake UX (single-key wake-to-app, standby dashboard), 0–9 quick-select.
+- **Skip:** AppLoader (OTA 3rd-party apps — we're a monolithic LVGL build),
+  Terminal/Wrench scripting (big surface, little PDA value), OLED hybrid UI
+  (no second screen), touch scroll bar (no touch).
+- **Backlog:** COMM ESP-NOW chat (needs a second unit), Wi-Fi note/calendar
+  sync, custom abbreviations / text expansion.
+
+### M7 — Power / deep-sleep (+ PocketMage sleep UX)
+- Deep sleep on PWR/idle; wake on RTC alarm + KEY (PCF85063 HW alarm — INT-pin
+  GPIO to be researched from the Waveshare demo repo). CPU freq scaling,
+  ST7305 low-power mode, low-battery handling.
+- **Standby dashboard**: when idle/charging, a static glanceable screen —
+  clock, today's agenda, due tasks. (Reflective panel = free always-on;
+  PocketMage's "Now-Later" screen.)
+- Wake restores the last app; stretch: single-key wake straight into an app
+  (N=Notes, C=Calendar, …) from the standby screen.
+
+### M8 — Tasks app + calendar power-ups
+- **Tasks** (`tasks.cpp`): title + optional due date, done/undone toggle,
+  auto-sort by due date, 0–9 quick-toggle, `/littlefs/tasks.json`. Due-dated
+  tasks surface in the calendar day agenda and (opt-in) arm reminders.
+- **Recurring events**, PocketMage grammar: `daily` / `weekly mo,we` /
+  `monthly 15` or `monthly 2tu` / `yearly apr22` — stored on the event file,
+  expanded into month-grid dots + agenda + reminder scheduler.
+- Type-to-jump in month view (digits → go to date).
+
+### M9 — Journal + Notes upgrades
+- **Journal** (`journal.cpp`): date-keyed entries — `T`/Enter = today,
+  `YYYYMMDD` or `jan 1` opens/creates that day; seeded from the existing
+  Journal template; streak / "days written" counter; archive to SD.
+- **Notes**: search across titles+bodies, sort by modified, word count in the
+  editor, export/import to SD.
+
+### M10 — Files + USB transfer
+- **FileWiz** (`files.cpp`): browse LittleFS + SD, open .txt in the editor,
+  rename/delete, recents on 0–9.
+- **USB app**: expose the SD card to a PC as TinyUSB **MSC** (dedicated app
+  mode — unmount SD locally while exposed, eject to return). Loads music /
+  dictionaries / books without pulling the card. Needs `USB Mode: USB-OTG`
+  build flag; verify coexistence with CDC serial logging.
+
+### M11 — Lexicon + Reader
+- **Lexicon**: offline dictionary from SD (prefix-indexed flat file; `<`/`>`
+  cycle definitions). Include a `tools/` script to build the data file from
+  WordNet/GCIDE.
+- **Reader**: paginated .txt reader from SD, saved position per book, reuses
+  the S/M/L font bar. Ideal use of the reflective panel.
+
+### M12 — Home command bar + consistency pass
+- Command bar under the launcher grid: type to filter/launch apps, open a note
+  by name, quick-add reminder (`rem 15m tea`), `roll d20`, `timeset`/`dateset`,
+  inline calculator (`= 12*7`).
+- Global keystroke consistency audit + `KEYS.md` manual + on-device `?` help
+  overlay per app.
