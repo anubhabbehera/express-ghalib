@@ -13,6 +13,7 @@
 #include "rtc.h"
 #include "settings.h"
 #include "st7305.h"
+#include "tasks.h"
 
 namespace {
 
@@ -25,6 +26,7 @@ struct App {
 const App kApps[] = {
     {LV_SYMBOL_EDIT,     "Notes"},
     {LV_SYMBOL_LIST,     "Calendar"},
+    {LV_SYMBOL_OK,       "Tasks"},
     {LV_SYMBOL_BELL,     "Reminders"},
     {LV_SYMBOL_AUDIO,    "Music"},
     {LV_SYMBOL_SETTINGS, "Settings"},
@@ -106,6 +108,7 @@ void tile_click_cb(lv_event_t* e) {
   const char* name = static_cast<const char*>(lv_event_get_user_data(e));
   if (strcmp(name, "Notes") == 0) notes_open();
   else if (strcmp(name, "Calendar") == 0) calendar_open();
+  else if (strcmp(name, "Tasks") == 0) tasks_open();
   else if (strcmp(name, "Reminders") == 0) reminders_open();
   else if (strcmp(name, "Music") == 0) music_open();
   else if (strcmp(name, "Settings") == 0) settings_open();
