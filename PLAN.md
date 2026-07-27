@@ -242,7 +242,7 @@ scripting), COMM (ESP-NOW mesh chat).
   for flashing).
 - Deferred: single-key wake into a specific app; RTC slow-clock calibration.
 
-### M8 — Tasks app + calendar power-ups
+### M8 — Tasks app + calendar power-ups ✅ (branch m8-apps; recur.cpp host-tested, on-device play-test pending)
 - **Tasks** (`tasks.cpp`): title + optional due date, done/undone toggle,
   auto-sort by due date, 0–9 quick-toggle, `/littlefs/tasks.json`. Due-dated
   tasks surface in the calendar day agenda and (opt-in) arm reminders.
