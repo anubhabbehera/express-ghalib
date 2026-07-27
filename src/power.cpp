@@ -32,6 +32,7 @@
 #include "reminders.h"
 #include "rtc.h"
 #include "st7305.h"
+#include "tasks.h"
 
 namespace {
 
@@ -119,6 +120,9 @@ String agenda_text(const char* now) {
   if (!shown && n > 0)  // nothing left today -> show what's next
     txt = "next: " + dts[0].substring(5, 10) + " " + dts[0].substring(11) +
           "   " + titles[0] + "\n";
+  String due[3];
+  const int nd = tasks_due_on(today, due, 3);
+  for (int i = 0; i < nd; i++) txt += "task: " + due[i] + "\n";
   if (txt.isEmpty()) txt = "no upcoming events";
   return txt;
 }
