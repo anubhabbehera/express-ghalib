@@ -8,6 +8,7 @@
 #include "config.h"
 #include "music.h"
 #include "notes.h"
+#include "power.h"
 #include "reminders.h"
 #include "rtc.h"
 #include "settings.h"
@@ -111,25 +112,8 @@ void tile_click_cb(lv_event_t* e) {
   else open_app(name);
 }
 
-// Battery reading from the 18650 sense on GPIO4 (ADC1_CH3, /3 divider — confirmed
-// from the Waveshare factory demo). Returns -1 to mean "show the charge icon":
-// the board exposes NO battery-detect or VBUS pin, and on USB the charger drives
-// the sense node to ~4.1V+ whether or not a cell is present — indistinguishable
-// from a full battery. So a pinned-high reading => on external power / near full
-// / no cell => icon; below that => an honest %.  3.0V=0% .. 4.2V=100%.
-constexpr int   PIN_BATT     = 4;
-constexpr float BATT_ICON_V  = 4.10f;  // >= this -> charging/external/full -> icon
-int battery_pct() {
-  uint32_t sum = 0;
-  constexpr int N = 16;
-  for (int i = 0; i < N; i++) sum += analogReadMilliVolts(PIN_BATT);
-  const float vbat = (sum / (float)N) * 3.0f / 1000.0f;   // undo the /3 divider
-  if (vbat >= BATT_ICON_V) return -1;         // charge icon
-  if (vbat < 3.0f) return 0;
-  return (int)((vbat - 3.0f) / 1.2f * 100.0f);
-}
-
 // Periodically reflect clock + battery + BLE/Wi-Fi state in the status bar.
+// (Battery reading lives in power.cpp — shared with the standby dashboard.)
 // Thanks to direct_mode each of these is a cheap partial redraw, not a full one.
 void status_timer_cb(lv_timer_t*) {
   if (g_clock) {
@@ -138,7 +122,7 @@ void status_timer_cb(lv_timer_t*) {
     lv_label_set_text(g_clock, dt + 11);  // -> "HH:MM"
   }
   if (g_batt) {
-    const int pct = battery_pct();
+    const int pct = power_battery_pct();
     if (pct < 0) {
       lv_label_set_text(g_batt, LV_SYMBOL_CHARGE);  // external power / no battery
     } else {
@@ -232,8 +216,7 @@ void launcher_build() {
   lv_label_set_text(g_wifi_icon, g_wifi_ok ? LV_SYMBOL_WIFI : "");
   lv_obj_align(g_wifi_icon, LV_ALIGN_RIGHT_MID, -28, 0);
 
-  analogSetPinAttenuation(PIN_BATT, ADC_11db);  // ~0..3.1V range for the /3 sense
-  g_batt = lv_label_create(bar);      // battery % from GPIO4
+  g_batt = lv_label_create(bar);      // battery % from GPIO4 (see power.cpp)
   lv_label_set_text(g_batt, "");
   lv_obj_align(g_batt, LV_ALIGN_RIGHT_MID, -56, 0);
 

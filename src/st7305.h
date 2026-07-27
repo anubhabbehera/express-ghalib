@@ -51,3 +51,8 @@ void st7305_flush_full(const uint8_t* buf);
 
 // Duration (microseconds) of the SPI transfer in the last st7305_flush_full().
 uint32_t st7305_last_flush_us();
+
+// Switch the panel to Low Power Mode (~1 Hz self-refresh; image retained).
+// Used before ESP32 deep sleep — the standby dashboard stays visible at ~zero
+// power. Any later st7305_flush_full() re-asserts High Power Mode (0x38).
+void st7305_low_power();

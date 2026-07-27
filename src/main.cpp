@@ -12,6 +12,7 @@
 #include "buttons.h"
 #include "launcher.h"
 #include "music.h"
+#include "power.h"
 #include "reminders.h"
 #include "rtc.h"
 #include "settings.h"
@@ -361,16 +362,19 @@ void setup() {
   Serial.println("express-ghalib boot");
 
   display_init();
-  input_init();
-  buttons_init();      // physical KEY/BOOT buttons
   storage_init();      // mount LittleFS for notes/config
   rtc_init();          // PCF85063 RTC (I2C) — dates for Daily Log
+  power_early_boot();  // dashboard-refresh wake: redraw + resleep (no return)
+
+  input_init();
+  buttons_init();      // physical KEY/BOOT buttons
   audio_init();        // ES8311 codec + I2S (shares the RTC's I2C bus)
   launcher_build();    // home-screen app launcher (keyboard-navigated)
   settings_boot_sync();// if Wi-Fi creds saved: connect + NTP-sync the RTC, then off
   ble_init();          // start NimBLE central scan + auto-connect
   reminders_init();    // background reminder scheduler (RTC vs calendar events)
   music_init();        // audio playback task (core 0) + command queue
+  power_init();        // replay slept-through reminders + idle watchdog + CPU scaling
   lv_timer_create(pairing_timer_cb, 200, nullptr);  // BLE re-pair overlay
 }
 

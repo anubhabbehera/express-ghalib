@@ -693,6 +693,43 @@ void reminders_init() {
   Serial.println("[REM] scheduler started (poll every 10s)");
 }
 
+// --- power-management hooks (see power.cpp / reminders.h) -------------------
+void reminders_seed_baseline(const char* local_dt) { g_last_check = local_dt; }
+
+void reminders_check_now() { poll_cb(nullptr); }
+
+String reminders_next_dt() {
+  const String now = now_str();
+  String best;
+  for (const Event& ev : load_events())
+    if (ev.dt > now && (best.isEmpty() || ev.dt < best)) best = ev.dt;
+  for (const auto& s : g_snoozes)
+    if (s.dt > now && (best.isEmpty() || s.dt < best)) best = s.dt;
+  return best;
+}
+
+bool reminders_due_since(const char* since) {
+  const String now = now_str(), s(since);
+  for (const Event& ev : load_events())
+    if (s < ev.dt && ev.dt <= now) return true;
+  return false;
+}
+
+bool reminders_snooze_pending() { return !g_snoozes.empty(); }
+
+int reminders_upcoming(String* dts, String* titles, int max) {
+  const String now = now_str();
+  int n = 0;
+  for (const Event& ev : load_events()) {  // already sorted by dt
+    if (ev.dt <= now) continue;
+    if (n >= max) break;
+    dts[n] = ev.dt;
+    titles[n] = ev.title;
+    n++;
+  }
+  return n;
+}
+
 bool reminders_alert_active() { return g_alert_box != nullptr; }
 
 void reminders_dismiss() {

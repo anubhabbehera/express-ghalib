@@ -123,3 +123,5 @@ void st7305_flush_full(const uint8_t* buf) {
 }
 
 uint32_t st7305_last_flush_us() { return g_flush_us; }
+
+void st7305_low_power() { cmd(0x39); }  // LPM on (counterpart of 0x38 HPM)

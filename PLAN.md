@@ -215,15 +215,32 @@ scripting), COMM (ESP-NOW mesh chat).
 - **Backlog:** COMM ESP-NOW chat (needs a second unit), Wi-Fi note/calendar
   sync, custom abbreviations / text expansion.
 
-### M7 — Power / deep-sleep (+ PocketMage sleep UX)
-- Deep sleep on PWR/idle; wake on RTC alarm + KEY (PCF85063 HW alarm — INT-pin
-  GPIO to be researched from the Waveshare demo repo). CPU freq scaling,
-  ST7305 low-power mode, low-battery handling.
-- **Standby dashboard**: when idle/charging, a static glanceable screen —
-  clock, today's agenda, due tasks. (Reflective panel = free always-on;
-  PocketMage's "Now-Later" screen.)
-- Wake restores the last app; stretch: single-key wake straight into an app
-  (N=Notes, C=Calendar, …) from the standby screen.
+### M7 — Power / deep-sleep (+ PocketMage sleep UX) ✅ (branch m7-power)
+- ✅ Idle timeout (Settings row: Off/1/2/5/10 m, default 2 m) → **standby
+  dashboard** (48pt clock, date, battery, today's agenda) → deep sleep. Panel
+  keeps the image (ST7305 LPM 0x39); a ~60 s timer wake redraws the clock via a
+  minimal boot (display+FS+RTC, no BLE/audio) and re-sleeps — verified via the
+  new `/pwr.log` boot journal (r8/w4 dash-tick entries).
+- ✅ **On external power → awake desk clock** instead of deep sleep (any key
+  returns; unplug drops to real sleep on the next 30 s tick). USB-host detect
+  via `HWCDC::isPlugged()` (battery-voltage alone can't detect a charger with a
+  part-full cell). This also keeps USB alive for development flashing.
+- ✅ KEY (GPIO18, EXT1 any-low) wakes to a full boot; **BOOT is deliberately
+  not a wake pin** (GPIO0 strap → download mode if still held at reset).
+- ✅ Reminders across sleep: wake timer arms for min(60 s, next event); on a
+  due wake the full boot replays the missed window through the scheduler
+  (baseline seeded from the pre-sleep timestamp), so the alert + beep fire.
+  Deep sleep is blocked while a snooze is pending (snoozes are RAM-only).
+- ✅ Critical battery (≤3%): dashboard says "charge me", minute tick disabled.
+- Findings: PCF85063 INT is **not routed** on this board (ESP32 timer wake
+  stands in; RTC re-read every wake so drift never accumulates). RTC slow
+  clock runs ~15% fast (60 s ticks arrive at ~49 s — harmless). Spurious EXT1
+  wakes on GPIO18 happen occasionally (benign full boot). `setCpuFrequencyMhz`
+  **hangs with BLE active** → CPU scaling dropped; awake = 240 MHz.
+- `tools/capture.py` (serial capture w/ reset) + `tools/catch_wake.py` (catch
+  the 1 s wake window of a sleeping device and hold it in the ROM bootloader
+  for flashing).
+- Deferred: single-key wake into a specific app; RTC slow-clock calibration.
 
 ### M8 — Tasks app + calendar power-ups
 - **Tasks** (`tasks.cpp`): title + optional due date, done/undone toggle,
