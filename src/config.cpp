@@ -49,3 +49,16 @@ void config_set_text_size(int size) {
   g_prefs.putInt("txtsize", size);
   g_prefs.end();
 }
+
+int config_get_sleep_secs() {
+  g_prefs.begin(NS, true /*read-only*/);
+  const int s = g_prefs.getInt("sleepsec", 120);
+  g_prefs.end();
+  return s;
+}
+
+void config_set_sleep_secs(int secs) {
+  g_prefs.begin(NS, false);
+  g_prefs.putInt("sleepsec", secs);
+  g_prefs.end();
+}

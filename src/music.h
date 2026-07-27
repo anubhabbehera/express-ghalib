@@ -13,3 +13,7 @@ void music_init();
 
 // Open the Music app: mounts the SD card (lazily) and shows the /music list.
 void music_open();
+
+// True while a track is actively playing (not paused). Blocks deep sleep and
+// requests the 240 MHz CPU tier (see power.cpp).
+bool music_playing();

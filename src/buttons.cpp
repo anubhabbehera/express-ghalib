@@ -78,6 +78,11 @@ void buttons_init() {
 void buttons_poll() {
   bool key_long = false;
   const bool key_tap = key_poll(key_long);
+  // Physical buttons don't pass through an LVGL indev on every path (BOOT goes
+  // straight to launcher_go_home), so count them as activity for the idle
+  // watchdog explicitly.
+  if (key_tap || key_long || !digitalRead(PIN_BOOT))
+    lv_disp_trig_activity(nullptr);
   if (key_long && !ble_kbd_pairing()) {
     Serial.println("[BTN] KEY (hold) -> BLE pairing mode");
     ble_kbd_start_pairing();
