@@ -17,3 +17,7 @@ void config_set_tz_offset(int minutes);
 // Notes editor text size: 0 = small, 1 = medium, 2 = large. Default 1.
 int  config_get_text_size();
 void config_set_text_size(int size);
+
+// Idle seconds before standby dashboard + deep sleep. 0 = never. Default 120.
+int  config_get_sleep_secs();
+void config_set_sleep_secs(int secs);

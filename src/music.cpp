@@ -646,3 +646,5 @@ void music_open() {
   g_scr = nullptr;
   build_browser();
 }
+
+bool music_playing() { return g_playing && !g_paused; }
