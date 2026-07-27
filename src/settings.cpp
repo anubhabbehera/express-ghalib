@@ -341,6 +341,26 @@ void menu_tz_cb(lv_event_t*) {
   build_tz();
   if (old) lv_obj_del_async(old);
 }
+// Sleep-timeout row: Enter cycles Off -> 1m -> 2m -> 5m -> 10m in place.
+constexpr int kSleepPresets[] = {0, 60, 120, 300, 600};
+void sleep_row_text(char* out, size_t n) {
+  const int s = config_get_sleep_secs();
+  if (s <= 0)
+    snprintf(out, n, LV_SYMBOL_POWER "  Sleep after   Off");
+  else
+    snprintf(out, n, LV_SYMBOL_POWER "  Sleep after   %dm", s / 60);
+}
+void menu_sleep_cb(lv_event_t* e) {
+  const int cur = config_get_sleep_secs();
+  int idx = 0;
+  for (int i = 0; i < 5; i++)
+    if (kSleepPresets[i] == cur) idx = i;
+  config_set_sleep_secs(kSleepPresets[(idx + 1) % 5]);
+  char txt[40];
+  sleep_row_text(txt, sizeof txt);
+  lv_label_set_text(lv_obj_get_child(lv_event_get_target(e), 0), txt);
+}
+
 void menu_key_cb(lv_event_t* e) {
   const uint32_t k = lv_event_get_key(e);
   lv_group_t* g = lv_group_get_default();
@@ -378,6 +398,9 @@ void build_menu() {
   snprintf(tz, sizeof(tz), LV_SYMBOL_SETTINGS "  Time zone   %c%d:%02d",
            m < 0 ? '-' : '+', am / 60, am % 60);
   make_row(cont, tz, nullptr, menu_tz_cb, menu_key_cb);
+  char sl[40];
+  sleep_row_text(sl, sizeof sl);
+  make_row(cont, sl, nullptr, menu_sleep_cb, menu_key_cb);
 
   lv_scr_load(g_menu_scr);
   lv_group_focus_obj(r1);
