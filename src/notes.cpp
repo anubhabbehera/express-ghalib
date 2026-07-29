@@ -8,6 +8,7 @@
 #include "notes.h"
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <SD_MMC.h>
 #include <lvgl.h>
 #include <algorithm>
 #include <vector>
@@ -15,16 +16,19 @@
 #include "launcher.h"
 #include "rtc.h"
 #include "st7305.h"
+#include "storage.h"
 
 namespace {
 
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
-struct NoteMeta { int id; String title; };
+struct NoteMeta { int id; String title; time_t mtime; };
 
 String note_path(int id) { return String("/notes/") + id + ".txt"; }
 
+// Most-recently-modified first. Mtimes are real since rtc.cpp syncs the system
+// clock from the RTC at boot; ties (old files) fall back to newest id.
 std::vector<NoteMeta> list_notes() {
   std::vector<NoteMeta> v;
   File dir = LittleFS.open("/notes");
@@ -40,10 +44,12 @@ std::vector<NoteMeta> list_notes() {
     title.trim();
     if (title.length() > 32) title = title.substring(0, 32) + "...";
     if (title.isEmpty()) title = "(untitled)";
-    v.push_back({id, title});
+    v.push_back({id, title, f.getLastWrite()});
   }
-  std::sort(v.begin(), v.end(),
-            [](const NoteMeta& a, const NoteMeta& b) { return a.id > b.id; });
+  std::sort(v.begin(), v.end(), [](const NoteMeta& a, const NoteMeta& b) {
+    if (a.mtime != b.mtime) return a.mtime > b.mtime;
+    return a.id > b.id;
+  });
   return v;
 }
 
@@ -88,6 +94,11 @@ const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
 const char*      kSizeName[3] = {"S", "M", "L"};
 lv_obj_t*        g_size_lbl[3] = {};
 int              g_size = 1;
+
+lv_obj_t* g_search_ta = nullptr;  // search box on the list screen
+lv_obj_t* g_wc_lbl    = nullptr;  // word count in the editor's bottom bar
+String    g_filter;               // active search query ("" = all notes)
+String    g_status;               // one-shot message on the list screen
 
 void split_note(const String& full, String& title, String& body) {
   const int nl = full.indexOf('\n');
@@ -138,14 +149,37 @@ void notes_teardown() {
   if (g_pick_scr) { lv_obj_del_async(g_pick_scr); g_pick_scr = nullptr; }
   if (g_list_scr) { lv_obj_del_async(g_list_scr); g_list_scr = nullptr; }
   g_edit_id = -1;
+  g_search_ta = g_wc_lbl = nullptr;
+  g_filter = "";
 }
 
 // --- editor ----------------------------------------------------------------
+int count_words(const char* s) {
+  int n = 0;
+  bool in_word = false;
+  for (; *s; s++) {
+    const bool ws = *s == ' ' || *s == '\n' || *s == '\t' || *s == '\r';
+    if (!ws && !in_word) n++;
+    in_word = !ws;
+  }
+  return n;
+}
+
+void wc_update() {
+  if (!g_wc_lbl || !g_edit_ta) return;
+  char b[16];
+  snprintf(b, sizeof b, "%dw", count_words(lv_textarea_get_text(g_edit_ta)));
+  lv_label_set_text(g_wc_lbl, b);
+}
+
+void body_changed_cb(lv_event_t*) { wc_update(); }
+
 void editor_close_to_list() {
   if (g_autosave) { lv_timer_del(g_autosave); g_autosave = nullptr; }
   save_current();
   g_edit_ta = nullptr;
   g_title_ta = nullptr;
+  g_wc_lbl = nullptr;
   lv_obj_t* es = g_edit_scr;
   g_edit_scr = nullptr;
   g_edit_id = -1;
@@ -248,6 +282,7 @@ void open_editor(int id, const char* seed) {
   lv_textarea_set_text(ta, body.c_str());
   lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST);
   lv_obj_add_event_cb(ta, editor_key_cb, LV_EVENT_KEY, nullptr);
+  lv_obj_add_event_cb(ta, body_changed_cb, LV_EVENT_VALUE_CHANGED, nullptr);
   lv_group_add_obj(g, ta);
   g_edit_ta = ta;
 
@@ -278,6 +313,11 @@ void open_editor(int id, const char* seed) {
     lv_obj_set_style_radius(l, 2, 0);
     g_size_lbl[i] = l;
   }
+
+  g_wc_lbl = lv_label_create(bar);       // live word count, right-aligned
+  lv_obj_add_flag(g_wc_lbl, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(g_wc_lbl, LV_ALIGN_RIGHT_MID, 0, 0);
+  lv_label_set_text(g_wc_lbl, "");
   lv_obj_add_event_cb(bar, size_bar_key_cb, LV_EVENT_KEY, nullptr);
   lv_obj_add_event_cb(bar, size_bar_focus_cb, LV_EVENT_FOCUSED, nullptr);
   lv_obj_add_event_cb(bar, size_bar_focus_cb, LV_EVENT_DEFOCUSED, nullptr);
@@ -286,9 +326,92 @@ void open_editor(int id, const char* seed) {
   lv_scr_load(g_edit_scr);
   g_size = config_get_text_size();
   size_set(g_size);                          // body font + active chip fill
+  wc_update();
   // New note (from a template) starts on the title; existing note on the body.
   lv_group_focus_obj(seed ? g_title_ta : g_edit_ta);
   g_autosave = lv_timer_create(autosave_cb, 3000, nullptr);
+}
+
+// --- SD backup / restore ---------------------------------------------------
+// X = copy every note to SD /export/notes/<id>.txt; I = copy them back
+// (overwriting by id). A plain file-level backup/restore pair.
+void backup_to_sd() {
+  if (!storage_sd_mount()) { g_status = "SD not available"; build_list(); return; }
+  SD_MMC.mkdir("/export");
+  SD_MMC.mkdir("/export/notes");
+  int n = 0;
+  for (const auto& nm : list_notes()) {
+    File in = LittleFS.open(note_path(nm.id), "r");
+    if (!in) continue;
+    File out = SD_MMC.open(String("/export/notes/") + nm.id + ".txt", "w");
+    if (!out) { in.close(); continue; }
+    uint8_t buf[256];
+    while (in.available()) out.write(buf, in.read(buf, sizeof buf));
+    in.close();
+    out.close();
+    n++;
+  }
+  g_status = String("backed up ") + n + " to SD";
+  build_list();
+}
+
+void restore_from_sd() {
+  if (!storage_sd_mount()) { g_status = "SD not available"; build_list(); return; }
+  File dir = SD_MMC.open("/export/notes");
+  if (!dir || !dir.isDirectory()) {
+    g_status = "no /export/notes on SD";
+    build_list();
+    return;
+  }
+  int n = 0;
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    if (f.isDirectory()) continue;
+    String nm = f.name();
+    const int slash = nm.lastIndexOf('/');
+    if (slash >= 0) nm = nm.substring(slash + 1);
+    if (!nm.endsWith(".txt")) continue;
+    const int id = nm.substring(0, nm.length() - 4).toInt();
+    if (id <= 0) continue;
+    File out = LittleFS.open(note_path(id), "w");
+    if (!out) continue;
+    uint8_t buf[256];
+    while (f.available()) out.write(buf, f.read(buf, sizeof buf));
+    out.close();
+    n++;
+  }
+  g_status = String("restored ") + n + " from SD";
+  build_list();
+}
+
+// --- search ----------------------------------------------------------------
+// Title is line 1 of the note file, so one lowercase haystack covers both
+// "search titles" and "search bodies".
+bool note_matches(int id, const String& q) {
+  if (q.isEmpty()) return true;
+  String hay = read_note(id);
+  hay.toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+
+void search_apply_cb(lv_event_t*) {  // Enter in the search box
+  if (!g_search_ta) return;
+  g_filter = lv_textarea_get_text(g_search_ta);
+  g_filter.trim();
+  g_filter.toLowerCase();
+  build_list();
+}
+
+// One-line box: Up/Down leave it (a one-line textarea otherwise eats arrows);
+// Esc clears an active filter first, then backs out to the launcher.
+void search_key_cb(lv_event_t* e) {
+  const uint32_t k = lv_event_get_key(e);
+  lv_group_t* g = lv_group_get_default();
+  if (k == LV_KEY_DOWN) lv_group_focus_next(g);
+  else if (k == LV_KEY_UP) lv_group_focus_prev(g);
+  else if (k == LV_KEY_ESC) {
+    if (g_filter.isEmpty()) launcher_go_home();
+    else { g_filter = ""; build_list(); }
+  }
 }
 
 // --- note list -------------------------------------------------------------
@@ -311,6 +434,9 @@ void list_key_cb(lv_event_t* e) {
     const int id = (int)(intptr_t)lv_event_get_user_data(e);
     if (id >= 0) { delete_note(id); build_list(); }
   }
+  else if (k == '/') { if (g_search_ta) lv_group_focus_obj(g_search_ta); }
+  else if (k == 'x' || k == 'X') backup_to_sd();
+  else if (k == 'i' || k == 'I') restore_from_sd();
 }
 
 // Invert the focused row (black fill, white text) — clear on the 1-bit panel.
@@ -363,24 +489,59 @@ void build_list() {
   lv_label_set_text(title, "Notes");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
-  lv_obj_t* cont = lv_obj_create(g_list_scr);
-  lv_obj_set_size(cont, ST7305_W, ST7305_H - 36);
-  lv_obj_set_pos(cont, 0, 36);
-  lv_obj_set_style_border_width(cont, 0, 0);
-  lv_obj_set_style_pad_all(cont, 0, 0);
-  lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+  // One-shot status / hint line (top right, next to the title).
+  lv_obj_t* hint = lv_label_create(g_list_scr);
+  lv_label_set_text(hint, g_status.isEmpty()
+                              ? "/=find  X/I=SD backup/restore"
+                              : g_status.c_str());
+  g_status = "";
+  lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -8, 10);
 
   lv_group_t* g = lv_group_get_default();
   lv_group_remove_all_objs(g);
+
+  // Search box — Enter filters titles+bodies, Esc clears the filter.
+  lv_obj_t* st = lv_textarea_create(g_list_scr);
+  g_search_ta = st;
+  lv_obj_set_size(st, ST7305_W - 16, 28);
+  lv_obj_set_pos(st, 8, 32);
+  lv_textarea_set_one_line(st, true);
+  lv_obj_set_style_radius(st, 2, 0);
+  lv_obj_set_style_border_width(st, 1, 0);
+  lv_obj_set_style_border_color(st, lv_color_black(), 0);
+  lv_obj_set_style_pad_all(st, 3, 0);
+  lv_obj_set_style_anim_time(st, 0, LV_PART_CURSOR);
+  lv_textarea_set_placeholder_text(st, LV_SYMBOL_EYE_OPEN "  search notes...");
+  lv_textarea_set_text(st, g_filter.c_str());
+  lv_obj_add_event_cb(st, search_apply_cb, LV_EVENT_READY, nullptr);
+  lv_obj_add_event_cb(st, search_key_cb, LV_EVENT_KEY, nullptr);
+  lv_group_add_obj(g, st);
+
+  lv_obj_t* cont = lv_obj_create(g_list_scr);
+  lv_obj_set_size(cont, ST7305_W, ST7305_H - 66);
+  lv_obj_set_pos(cont, 0, 66);
+  lv_obj_set_style_border_width(cont, 0, 0);
+  lv_obj_set_style_pad_all(cont, 0, 0);
+  lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
 
   lv_obj_t* nb = make_row(cont, LV_SYMBOL_PLUS, "New note",
                           (void*)(intptr_t)-1, new_note_cb, list_key_cb);
 
   auto notes = list_notes();
-  Serial.printf("[notes] build_list: %u notes\n", (unsigned)notes.size());
-  for (const auto& n : notes)
+  int shown = 0;
+  for (const auto& n : notes) {
+    if (!note_matches(n.id, g_filter)) continue;
     make_row(cont, LV_SYMBOL_FILE, n.title.c_str(), (void*)(intptr_t)n.id,
              open_note_cb, list_key_cb);
+    shown++;
+  }
+  Serial.printf("[notes] build_list: %d/%u notes (filter='%s')\n", shown,
+                (unsigned)notes.size(), g_filter.c_str());
+  if (!g_filter.isEmpty() && shown == 0) {
+    lv_obj_t* none = lv_label_create(cont);
+    lv_label_set_text(none, "\n   no matches - Esc clears the search");
+    lv_obj_set_style_text_color(none, lv_color_black(), 0);
+  }
 
   lv_scr_load(g_list_scr);
   lv_group_focus_obj(nb);
