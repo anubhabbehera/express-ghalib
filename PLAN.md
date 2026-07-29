@@ -288,12 +288,18 @@ scripting), COMM (ESP-NOW mesh chat).
   at app entry). All HW-verified except the actual PC drive mount (keyboard
   play-test).
 
-### M11 — Lexicon + Reader
-- **Lexicon**: offline dictionary from SD (prefix-indexed flat file; `<`/`>`
-  cycle definitions). Include a `tools/` script to build the data file from
-  WordNet/GCIDE.
-- **Reader**: paginated .txt reader from SD, saved position per book, reuses
-  the S/M/L font bar. Ideal use of the reflective panel.
+### M11 — Lexicon + Reader ✅ (branch m11-reader, stacked on m10-files; play-test pending)
+- ✅ **Lexicon** (`lexicon.cpp`): offline dictionary from SD
+  `/lexicon/dict.txt` + `dict.idx` (two-letter-prefix buckets, RAM-cached
+  index, buffered sorted scan). Enter=lookup, **Up/Down** cycle senses (not
+  `<`/`>` — they'd type into the input), nearby-word suggestions on a miss.
+  `tools/build_lexicon.py` builds the files from WordNet 3.1 (16.1 MB, 207k
+  senses); lookup algorithm host-verified against the generated data.
+- ✅ **Reader** (`reader.cpp`): paginated .txt/.md from SD `/books`;
+  byte-window pages snapped to whitespace, one static redraw per page;
+  exact Prev via page-start history; per-book resume (`/reader_pos.txt`);
+  S key cycles the shared S/M/L size pref.
+- Launcher reflowed for 10 apps: 88×76 tiles, 3 cols × 4 rows, 14 pt labels.
 
 ### M12 — Home command bar + consistency pass
 - Command bar under the launcher grid: type to filter/launch apps, open a note
