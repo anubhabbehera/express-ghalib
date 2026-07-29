@@ -176,8 +176,8 @@ int       g_edit_id   = -1;
 String    g_edit_date;             // "YYYY-MM-DD" fixed for the event in the editor
 
 // Body text-size options (shared design with the Notes editor).
-const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
-                              &lv_font_montserrat_20};
+const lv_font_t* kSizes[3] = {&pixel_operator_16, &pixel_operator_16,
+                              &pixel_operator_bold_16};
 const char*      kSizeName[3] = {"S", "M", "L"};
 lv_obj_t*        g_size_lbl[3] = {};
 int              g_size = 1;
@@ -508,7 +508,7 @@ void build_day(int y, int m, int d) {
   lv_obj_clear_flag(g_day_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_day_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   char hdr[24];
   snprintf(hdr, sizeof hdr, "%s %d", kMonth[m - 1], d);
   lv_label_set_text(title, hdr);
@@ -650,7 +650,7 @@ void build_month() {
 
   // Title: "July 2026", centred.
   lv_obj_t* title = lv_label_create(g_month_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   char hdr[24];
   snprintf(hdr, sizeof hdr, "%s %d", kMonth[g_view_m - 1], g_view_y);
   lv_label_set_text(title, hdr);
@@ -660,7 +660,7 @@ void build_month() {
   const int colw = ST7305_W / 7;            // 400/7 = 57
   for (int i = 0; i < 7; i++) {
     lv_obj_t* w = lv_label_create(g_month_scr);
-    lv_obj_set_style_text_font(w, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(w, &pixel_operator_16, 0);
     lv_label_set_text(w, kWday[i]);
     lv_obj_set_style_text_align(w, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(w, colw);
@@ -702,7 +702,7 @@ void build_month() {
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* num = lv_label_create(c);
-    lv_obj_set_style_text_font(num, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(num, &pixel_operator_16, 0);
     char db[4];
     snprintf(db, sizeof db, "%d", day);
     lv_label_set_text(num, db);

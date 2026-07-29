@@ -165,7 +165,7 @@ void build_password() {
   lv_obj_clear_flag(g_pass_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_pass_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text_fmt(title, "%s", g_ssid);
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 8);
 
@@ -234,7 +234,7 @@ void build_scan() {
   lv_obj_clear_flag(g_scan_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_scan_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   char dt[20];
   rtc_datetime(dt);
   lv_label_set_text_fmt(title, "Wi-Fi   %s", dt);
@@ -316,7 +316,7 @@ void build_tz() {
   lv_obj_clear_flag(g_tz_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_tz_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Time zone");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 8);
 
@@ -393,7 +393,7 @@ void build_menu() {
   lv_obj_clear_flag(g_menu_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_menu_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Settings");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

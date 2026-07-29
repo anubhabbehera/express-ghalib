@@ -280,7 +280,7 @@ void open_editor(const String& path) {
   lv_obj_t* nm = lv_label_create(hdr);
   lv_label_set_text(nm, path_base(path).c_str());
   lv_obj_set_style_text_color(nm, lv_color_white(), 0);
-  lv_obj_set_style_text_font(nm, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(nm, &pixel_operator_16, 0);
   lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
   lv_obj_set_width(nm, ST7305_W - 16);
   lv_obj_align(nm, LV_ALIGN_LEFT_MID, 0, 0);
@@ -371,7 +371,7 @@ void open_rename(const String& path) {
   lv_obj_clear_flag(g_ren_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_ren_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Rename");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -446,7 +446,7 @@ void build_browser() {
   lv_obj_clear_flag(g_brow_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_brow_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text_fmt(title, "%s %s", g_sd ? "SD" : "Flash", g_path.c_str());
   lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
   lv_obj_set_width(title, ST7305_W - 24);
@@ -675,7 +675,7 @@ void build_root() {
   lv_obj_clear_flag(g_root_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_root_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Files");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

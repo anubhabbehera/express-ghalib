@@ -439,7 +439,7 @@ void build_browser() {
   lv_obj_clear_flag(g_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, LV_SYMBOL_AUDIO "  Music");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -526,7 +526,7 @@ void build_now_playing() {
   lv_obj_clear_flag(g_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   g_name_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_name_lbl, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_name_lbl, &pixel_operator_bold_16, 0);
   lv_label_set_long_mode(g_name_lbl, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(g_name_lbl, ST7305_W - 40);
   lv_obj_set_style_text_align(g_name_lbl, LV_TEXT_ALIGN_CENTER, 0);
@@ -534,7 +534,7 @@ void build_now_playing() {
   lv_obj_align(g_name_lbl, LV_ALIGN_TOP_MID, 0, 12);
 
   g_state_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_state_lbl, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_state_lbl, &pixel_operator_bold_16, 0);
   lv_label_set_text(g_state_lbl, LV_SYMBOL_PLAY "  Playing");
   lv_obj_align(g_state_lbl, LV_ALIGN_TOP_MID, 0, 74);
 
@@ -551,12 +551,12 @@ void build_now_playing() {
   lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
 
   g_elapsed_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_elapsed_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_elapsed_lbl, &pixel_operator_16, 0);
   lv_label_set_text(g_elapsed_lbl, "0:00");
   lv_obj_align(g_elapsed_lbl, LV_ALIGN_TOP_LEFT, 32, 126);
 
   g_total_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_total_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_total_lbl, &pixel_operator_16, 0);
   lv_label_set_text(g_total_lbl, "--:--");
   lv_obj_align(g_total_lbl, LV_ALIGN_TOP_RIGHT, -32, 126);
 
@@ -586,17 +586,17 @@ void build_now_playing() {
   lv_bar_set_range(g_vol_bar, 0, 100);
   lv_bar_set_value(g_vol_bar, g_volume, LV_ANIM_OFF);
   g_vol_lbl = lv_label_create(vrow);
-  lv_obj_set_style_text_font(g_vol_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_vol_lbl, &pixel_operator_16, 0);
   lv_label_set_text(g_vol_lbl, "75%");
 
   // Shuffle / repeat state.
   g_mode_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_mode_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_mode_lbl, &pixel_operator_16, 0);
   lv_label_set_text(g_mode_lbl, LV_SYMBOL_SHUFFLE " Off    " LV_SYMBOL_LOOP " Off");
   lv_obj_align(g_mode_lbl, LV_ALIGN_TOP_MID, 0, 186);
 
   lv_obj_t* hint = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(hint, &pixel_operator_16, 0);
   lv_label_set_text(hint,
                     LV_SYMBOL_LEFT "/" LV_SYMBOL_RIGHT " prev/next   Enter pause   s shuffle   r repeat\n"
                     LV_SYMBOL_UP "/" LV_SYMBOL_DOWN " vol   Esc/KEY back");

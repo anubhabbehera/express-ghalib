@@ -171,7 +171,7 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_label_set_text(icon, app.icon);
 
   lv_obj_t* label = lv_label_create(tile);
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(label, &pixel_operator_16, 0);
   lv_label_set_text(label, app.name);
 
   lv_obj_add_event_cb(tile, tile_focus_cb, LV_EVENT_FOCUSED, nullptr);
@@ -236,7 +236,7 @@ void launcher_build() {
   lv_obj_align(g_batt, LV_ALIGN_RIGHT_MID, -56, 0);
 
   g_clock = lv_label_create(bar);     // live HH:MM from the RTC
-  lv_obj_set_style_text_font(g_clock, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_clock, &pixel_operator_bold_16, 0);
   lv_label_set_text(g_clock, "--:--");
   lv_obj_align(g_clock, LV_ALIGN_CENTER, 0, 0);
 
