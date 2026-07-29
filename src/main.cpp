@@ -361,10 +361,11 @@ void setup() {
   delay(200);
   Serial.println("express-ghalib boot");
 
-  display_init();
   storage_init();      // mount LittleFS for notes/config
   rtc_init();          // PCF85063 RTC (I2C) — dates for Daily Log
-  power_early_boot();  // dashboard-refresh wake: redraw + resleep (no return)
+  power_early_boot();  // BEFORE display_init: a silent poll wake re-sleeps
+                       // without ever touching the panel (no standby flash)
+  display_init();
 
   input_init();
   buttons_init();      // physical KEY/BOOT buttons
