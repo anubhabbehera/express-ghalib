@@ -264,6 +264,12 @@ scripting), COMM (ESP-NOW mesh chat).
   after NTP set) so LittleFS mtimes are real; SD mount moved to a shared
   `storage_sd_mount()` (music + backups); launcher grid reflowed to 4 rows
   (tiles 112×76) for the 7th tile.
+- Fallout fixed (HW-verified): (a) the settimeofday change made
+  `getLocalTime()` pass instantly, so boot "NTP" wrote the RTC back onto
+  itself — both sync paths now wait for `sntp_get_sync_status()==COMPLETED`;
+  (b) the PCF85063's Control_1 **STOP bit was found set** (counter halted,
+  OS flag clear — clock reads fine but never ticks; probably a hard reset
+  mid-I2C poll). `rtc_init` now logs Control_1/2 and clears STOP every boot.
 
 ### M10 — Files + USB transfer
 - **FileWiz** (`files.cpp`): browse LittleFS + SD, open .txt in the editor,
