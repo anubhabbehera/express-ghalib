@@ -152,6 +152,7 @@ lv_obj_t*   g_body_ta = nullptr;   // editor body
 lv_timer_t* g_autosave = nullptr;
 String      g_edit_key;            // day being edited
 String      g_status;              // one-shot message under the header
+bool        g_focus_jump = false;  // next build_list: focus the jump box
 
 void build_list();
 
@@ -351,6 +352,9 @@ void jump_ready_cb(lv_event_t*) {
   const String key = parse_jump(lv_textarea_get_text(g_jump_ta), today_key());
   if (key.isEmpty()) {
     g_status = "date? try: jan 1 / 20260101 / t";
+    // READY fires on Enter *press*; keep focus on the jump box so the release
+    // click doesn't land on (and open) the Today row (mono_ui_lessons).
+    g_focus_jump = true;
     build_list();
     return;
   }
@@ -438,7 +442,8 @@ void build_list() {
   }
 
   lv_scr_load(g_scr);
-  lv_group_focus_obj(first);
+  lv_group_focus_obj(g_focus_jump ? g_jump_ta : first);
+  g_focus_jump = false;
   if (old) lv_obj_del_async(old);
 }
 
