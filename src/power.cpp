@@ -40,8 +40,9 @@ namespace {
 constexpr int PIN_KEY  = 18;  // side buttons, active-low (EXT1 wake sources)
 constexpr int PIN_BOOT = 0;
 
-constexpr int      CRIT_BATT_PCT   = 3;      // below this: sleep, no minute tick
-constexpr uint32_t DASH_TICK_S     = 60;     // dashboard clock refresh period
+constexpr int      CRIT_BATT_PCT   = 3;      // below this: sleep, no poll wake
+constexpr uint32_t POLL_TICK_S     = 60;     // silent power-poll wake period
+constexpr uint32_t DASH_LINGER_MS  = 5000;   // battery: dashboard time pre-sleep
 constexpr uint32_t REMIND_MARGIN_S = 3;      // wake this much AFTER an event is due
 
 // Survives deep sleep. g_sleep_at = local "YYYY-MM-DD HH:MM" when we went to
@@ -78,7 +79,8 @@ time_t parse_local(const char* s) {
   return mktime(&t);  // TZ=UTC0 (rtc_init): consistent for differences
 }
 
-[[noreturn]] void sleep_now(int batt_pct);  // fwd (defined below)
+[[noreturn]] void sleep_now(int batt_pct);        // fwd (defined below)
+[[noreturn]] void resleep_silent(int batt_pct);   // fwd (defined below)
 
 // External power? A USB host attached is the reliable signal: SOF-based
 // HWCDC::isPlugged() on USB-Serial-JTAG builds, TinyUSB's tud_mounted() on
@@ -95,6 +97,20 @@ bool usb_host_attached() {
 #else
   return tud_mounted();
 #endif
+}
+
+// tud_mounted() only turns true once the host has ENUMERATED us (~1 s after
+// USB.begin) — an instant check right after a deep-sleep reboot reports
+// "unplugged" even with the cable in (this is what kept a plugged-in device
+// stuck in sleep cycles instead of settling into the desk clock). Poll for a
+// grace window on wake paths.
+bool usb_host_attached_wait(uint32_t ms) {
+  const uint32_t t0 = millis();
+  while (!usb_host_attached()) {
+    if (millis() - t0 >= ms) return false;
+    delay(25);
+  }
+  return true;
 }
 
 bool on_external_power(int batt_pct) {
@@ -141,6 +157,11 @@ String agenda_text(const char* now) {
   return txt;
 }
 
+// The Great Wave (src/img_wave.c, tools/make_wave.py) fills a left band;
+// clock/date/agenda live in the remaining right column, centered on +80.
+extern "C" const lv_img_dsc_t img_wave;
+constexpr lv_coord_t kDashColX = 80;  // right-column center offset from mid
+
 void dashboard_show(int batt_pct) {
   lv_obj_t* scr = lv_obj_create(nullptr);
   g_dash_scr = scr;
@@ -154,12 +175,17 @@ void dashboard_show(int batt_pct) {
   const time_t tt = parse_local(now);
   localtime_r(&tt, &t);
 
+  // Left band: pixelated Great Wave off Kanagawa.
+  lv_obj_t* wave = lv_img_create(scr);
+  lv_img_set_src(wave, &img_wave);
+  lv_obj_set_pos(wave, 10, (ST7305_H - 210) / 2);
+
   // Big clock + date.
   g_dash_clk = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_clk, &lv_font_montserrat_48, 0);
+  lv_obj_set_style_text_font(g_dash_clk, &pixel_operator_48, 0);
   lv_obj_set_style_text_color(g_dash_clk, lv_color_black(), 0);
   lv_label_set_text(g_dash_clk, now + 11);  // "HH:MM"
-  lv_obj_align(g_dash_clk, LV_ALIGN_TOP_MID, 0, 34);
+  lv_obj_align(g_dash_clk, LV_ALIGN_TOP_MID, kDashColX, 34);
 
   static const char* kWday[7] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
                                  "Thursday", "Friday", "Saturday"};
@@ -169,10 +195,10 @@ void dashboard_show(int batt_pct) {
   snprintf(date, sizeof date, "%s, %s %d", kWday[t.tm_wday], kMon[t.tm_mon],
            t.tm_mday);
   g_dash_date = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_date, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_dash_date, &pixel_operator_bold_16, 0);
   lv_obj_set_style_text_color(g_dash_date, lv_color_black(), 0);
   lv_label_set_text(g_dash_date, date);
-  lv_obj_align(g_dash_date, LV_ALIGN_TOP_MID, 0, 96);
+  lv_obj_align(g_dash_date, LV_ALIGN_TOP_MID, kDashColX, 96);
 
   // Battery, top-right.
   g_dash_bat = lv_label_create(scr);
@@ -187,7 +213,8 @@ void dashboard_show(int batt_pct) {
   lv_obj_align(g_dash_bat, LV_ALIGN_TOP_RIGHT, -10, 8);
 
   // Divider + agenda: today's remaining events, else the next upcoming one.
-  static lv_point_t seg[2] = {{60, 0}, {(lv_coord_t)(ST7305_W - 60), 0}};
+  // Both live in the right column, clear of the wave.
+  static lv_point_t seg[2] = {{180, 0}, {(lv_coord_t)(ST7305_W - 15), 0}};
   lv_obj_t* ln = lv_line_create(scr);
   lv_line_set_points(ln, seg, 2);
   lv_obj_set_style_line_width(ln, 1, 0);
@@ -195,11 +222,13 @@ void dashboard_show(int batt_pct) {
   lv_obj_set_pos(ln, 0, 134);
 
   g_dash_ag = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_ag, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(g_dash_ag, &pixel_operator_16, 0);
   lv_obj_set_style_text_color(g_dash_ag, lv_color_black(), 0);
   lv_obj_set_style_text_align(g_dash_ag, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_width(g_dash_ag, 220);  // wrap inside the right column
+  lv_label_set_long_mode(g_dash_ag, LV_LABEL_LONG_WRAP);
   lv_label_set_text(g_dash_ag, agenda_text(now).c_str());
-  lv_obj_align(g_dash_ag, LV_ALIGN_TOP_MID, 0, 150);
+  lv_obj_align(g_dash_ag, LV_ALIGN_TOP_MID, kDashColX, 150);
 
   lv_obj_t* foot = lv_label_create(scr);
   lv_obj_set_style_text_color(foot, lv_color_black(), 0);
@@ -207,13 +236,17 @@ void dashboard_show(int batt_pct) {
                               ? "battery empty - charge me"
                           : batt_pct < 0 ? "on power - any key to return"
                                          : "press KEY to wake");
-  lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -10);
+  lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, kDashColX, -10);
 
   lv_scr_load(scr);
   lv_refr_now(nullptr);  // paint + flush before we power down / settle
 }
 
-// --- awake desk-clock mode (external power) --------------------------------
+// --- live dashboard modes --------------------------------------------------
+// Two flavors share one screen + key catcher:
+//  - desk clock (external power): 30 s refresh, stays up until unplug/key;
+//  - battery linger: shown for DASH_LINGER_MS so the user sees it settle,
+//    any key cancels back to the launcher, then deep sleep.
 void dash_leave() {  // launcher teardown hook (any key / BOOT went home)
   if (g_dash_timer) { lv_timer_del(g_dash_timer); g_dash_timer = nullptr; }
   if (g_dash_scr) { lv_obj_del_async(g_dash_scr); g_dash_scr = nullptr; }
@@ -246,10 +279,11 @@ void dash_refresh_cb(lv_timer_t*) {
   }
 }
 
-void awake_dashboard() {
+// Dashboard + key catcher (any key returns to the launcher) — shared by the
+// desk clock and the battery pre-sleep linger.
+void show_live_dashboard(int batt_pct) {
   g_dash_awake = true;
-  dashboard_show(-1);
-  // A focused catcher object so any keyboard key returns to the launcher.
+  dashboard_show(batt_pct);
   lv_group_remove_all_objs(lv_group_get_default());
   lv_obj_t* c = lv_btn_create(g_dash_scr);
   lv_obj_set_size(c, 1, 1);
@@ -261,21 +295,51 @@ void awake_dashboard() {
   lv_group_add_obj(lv_group_get_default(), c);
   lv_group_focus_obj(c);
   launcher_set_leave_hook(dash_leave);
+}
+
+void desk_clock() {
+  show_live_dashboard(-1);
   g_dash_timer = lv_timer_create(dash_refresh_cb, 30000, nullptr);
   Serial.println("[PWR] awake dashboard (external power)");
 }
 
-// Arm wake sources and enter deep sleep. Never returns.
-[[noreturn]] void sleep_now(int batt_pct) {
+// Battery: after the linger, sleep — unless a cable arrived meanwhile.
+void dash_sleep_cb(lv_timer_t*) {
+  const int b = power_battery_pct();
+  if (on_external_power(b)) {
+    lv_timer_del(g_dash_timer);
+    g_dash_timer = lv_timer_create(dash_refresh_cb, 30000, nullptr);
+    if (g_dash_bat) lv_label_set_text(g_dash_bat, LV_SYMBOL_CHARGE);
+    Serial.println("[PWR] plugged during linger -> desk clock");
+    return;
+  }
+  lv_refr_now(nullptr);
+  sleep_now(b);  // never returns; dash_leave never ran (timer still ours)
+}
+
+void battery_dashboard(int batt_pct) {
+  show_live_dashboard(batt_pct);
+  g_dash_timer = lv_timer_create(dash_sleep_cb, DASH_LINGER_MS, nullptr);
+  Serial.printf("[PWR] dashboard linger %lus -> deep sleep\n",
+                (unsigned long)(DASH_LINGER_MS / 1000));
+}
+
+// Arm wake sources and enter deep sleep. Never returns. `touch_panel` is
+// false on the silent poll re-sleep path, where the display was never
+// initialised this boot — sending it commands would need SPI setup and, more
+// importantly, re-initialising it is exactly what used to flash the screen
+// every minute.
+[[noreturn]] void arm_and_sleep(int batt_pct, bool touch_panel) {
   char now[17];
   rtc_local_datetime(now);
   memcpy(g_sleep_at, now, sizeof g_sleep_at);
   g_dash = 1;
 
-  // Timer wake: the minute tick for the dashboard clock, or the next reminder
-  // if that lands sooner. On critical battery skip the minute tick entirely
-  // (the clock freezes; reminders still wake us — they're rare and audible).
-  uint64_t wake_s = DASH_TICK_S;
+  // Timer wake: a silent power poll (so a cable plugged into a sleeping
+  // device brings up the desk clock within a minute), or the next reminder if
+  // that lands sooner. On critical battery skip the poll entirely (reminders
+  // still wake us — they're rare and audible).
+  uint64_t wake_s = POLL_TICK_S;
   const bool crit = batt_pct >= 0 && batt_pct <= CRIT_BATT_PCT;
   if (crit) wake_s = 0;
   const String next = reminders_next_dt();
@@ -296,7 +360,8 @@ void awake_dashboard() {
   rtc_gpio_pulldown_dis((gpio_num_t)PIN_KEY);
   esp_sleep_enable_ext1_wakeup(1ULL << PIN_KEY, ESP_EXT1_WAKEUP_ANY_LOW);
 
-  st7305_low_power();  // panel keeps the image at its ~1 Hz self-refresh
+  if (touch_panel)
+    st7305_low_power();  // panel keeps the image at its ~1 Hz self-refresh
   char sl[32];
   snprintf(sl, sizeof sl, "sleep wake_s=%llu", (unsigned long long)wake_s);
   pwr_log(sl);
@@ -305,6 +370,11 @@ void awake_dashboard() {
   Serial.flush();
   esp_deep_sleep_start();
   abort();  // not reached
+}
+
+[[noreturn]] void sleep_now(int batt_pct) { arm_and_sleep(batt_pct, true); }
+[[noreturn]] void resleep_silent(int batt_pct) {
+  arm_and_sleep(batt_pct, false);
 }
 
 // The idle watchdog (1 s lv_timer on the full-boot path).
@@ -332,13 +402,14 @@ void idle_cb(lv_timer_t*) {
     Serial.printf("[PWR] idle timeout -> standby dashboard (batt=%d usb=%d)\n",
                   b, (int)usb_host_attached());
     if (on_external_power(b)) {
-      awake_dashboard();  // external power: stay awake as a desk clock
+      desk_clock();          // external power: dashboard stays up
     } else {
-      dashboard_show(b);
-      sleep_now(b);
+      battery_dashboard(b);  // dashboard for 5 s (key escapes), then sleep
     }
   }
 }
+
+bool g_boot_to_dash = false;  // timer wake found USB power -> desk clock
 
 }  // namespace
 
@@ -363,6 +434,9 @@ int power_battery_pct() {
 }
 
 void power_early_boot() {
+  // Called BEFORE display_init(): a poll wake that goes straight back to
+  // sleep never touches the panel, so standby no longer flashes the screen
+  // every minute (the old "dash tick" redraw did).
   const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   if (cause == ESP_SLEEP_WAKEUP_TIMER && g_dash) {
     if (reminders_due_since(g_sleep_at)) {
@@ -370,16 +444,16 @@ void power_early_boot() {
       return;  // full boot; power_init() replays the missed window
     }
     const int b = power_battery_pct();
-    if (on_external_power(b)) {
-      // Plugged in while sleeping: leave the sleep cycle, full boot (the idle
-      // watchdog then brings up the awake desk clock instead).
-      pwr_log("wake: on power -> full boot");
+    if (b < 0 || usb_host_attached_wait(1200)) {
+      // Cable arrived while sleeping: full boot, then straight to the desk
+      // clock (power_init) — "USB connected => dashboard is showing".
+      pwr_log("wake: on power -> desk clock");
+      g_boot_to_dash = true;
       return;
     }
-    // Pure clock tick: redraw and go back down. ~0.5 s awake.
-    pwr_log("wake: dash tick");
-    dashboard_show(b);
-    sleep_now(b);
+    // Still on battery, nothing due: back down without touching the panel.
+    pwr_log("wake: silent poll");
+    resleep_silent(b);
   }
   pwr_log(cause == ESP_SLEEP_WAKEUP_EXT1 ? "wake: KEY -> full boot"
                                          : "boot (cold/other)");
@@ -397,6 +471,12 @@ void power_init() {
   lv_timer_create(idle_cb, 1000, nullptr);
   Serial.printf("[PWR] idle watchdog on (sleep after %d s; 0 = never)\n",
                 config_get_sleep_secs());
+  if (g_boot_to_dash) {
+    // Woke from sleep because a USB cable showed up: dashboard right away
+    // (no 2-minute idle wait). Any key drops back to the launcher.
+    g_boot_to_dash = false;
+    desk_clock();
+  }
   // Dump the boot journal — the only window into dashboard-refresh boots.
   File f = LittleFS.open("/pwr.log", "r");
   if (f) {
