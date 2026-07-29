@@ -6,6 +6,7 @@
 #include "ble_kbd.h"
 #include "calendar.h"
 #include "config.h"
+#include "files.h"
 #include "journal.h"
 #include "music.h"
 #include "notes.h"
@@ -31,6 +32,7 @@ const App kApps[] = {
     {LV_SYMBOL_OK,       "Tasks"},
     {LV_SYMBOL_BELL,     "Reminders"},
     {LV_SYMBOL_AUDIO,    "Music"},
+    {LV_SYMBOL_DIRECTORY,"Files"},
     {LV_SYMBOL_SETTINGS, "Settings"},
 };
 
@@ -114,6 +116,7 @@ void tile_click_cb(lv_event_t* e) {
   else if (strcmp(name, "Tasks") == 0) tasks_open();
   else if (strcmp(name, "Reminders") == 0) reminders_open();
   else if (strcmp(name, "Music") == 0) music_open();
+  else if (strcmp(name, "Files") == 0) files_open();
   else if (strcmp(name, "Settings") == 0) settings_open();
   else open_app(name);
 }

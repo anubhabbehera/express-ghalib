@@ -271,13 +271,22 @@ scripting), COMM (ESP-NOW mesh chat).
   OS flag clear — clock reads fine but never ticks; probably a hard reset
   mid-I2C poll). `rtc_init` now logs Control_1/2 and clears STOP every boot.
 
-### M10 — Files + USB transfer
-- **FileWiz** (`files.cpp`): browse LittleFS + SD, open .txt in the editor,
-  rename/delete, recents on 0–9.
-- **USB app**: expose the SD card to a PC as TinyUSB **MSC** (dedicated app
-  mode — unmount SD locally while exposed, eject to return). Loads music /
-  dictionaries / books without pulling the card. Needs `USB Mode: USB-OTG`
-  build flag; verify coexistence with CDC serial logging.
+### M10 — Files + USB transfer ✅ (branch m10-files; on-device play-test pending)
+- ✅ **FileWiz** (`files.cpp`, 8th launcher tile — grid now full at 4×2):
+  root screen (Flash/SD volumes + 0–9 recents from `/recents.txt`), directory
+  browser (dirs first, sizes, dotfiles hidden), text editor (.txt/.md/.log/
+  .csv/.json, 32 K cap, save on exit), `R`=rename, Del=delete.
+- ✅ **USB transfer** (row on the Files root, not a 9th tile): SD VFS
+  unmounted, card driven raw (IDF sdmmc) and exposed as TinyUSB **MSC**;
+  Esc/Home ejects + remounts; blocks idle-sleep while exposed.
+- Build now **USB-OTG** (`ARDUINO_USB_MODE=0`): Serial = TinyUSB CDC (new
+  port name — capture.py takes `EG_PORT`/globs), flashing via 1200 bps touch
+  (`use_1200bps_touch` + `wait_for_upload_port`; ROM bootloader re-appears as
+  the old USB-JTAG-Serial port). power.cpp host-detect = `tud_mounted()`.
+  Gotcha: the core calls `USB.begin()` **before setup()** under CDC_ON_BOOT,
+  so the global USBMSC ctor registers the MSC interface (capacity filled in
+  at app entry). All HW-verified except the actual PC drive mount (keyboard
+  play-test).
 
 ### M11 — Lexicon + Reader
 - **Lexicon**: offline dictionary from SD (prefix-indexed flat file; `<`/`>`
