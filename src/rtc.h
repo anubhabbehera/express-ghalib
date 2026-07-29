@@ -3,6 +3,7 @@
  * date for the Daily Log template); full time-setting / NTP sync is M3.
  */
 #pragma once
+#include <time.h>
 
 // Init the I2C bus + RTC. If the clock was never set (oscillator-stop flag),
 // seed it from the firmware build date/time so we have a sensible date.
@@ -20,3 +21,6 @@ void rtc_datetime(char* out);
 // Same, but with the saved local timezone offset applied (config_get_tz_offset).
 // This is the "wall clock" the user sees / enters events in.
 void rtc_local_datetime(char* out);
+
+// Current RTC time as a UTC epoch (0 if the RTC isn't responding).
+time_t rtc_epoch_utc();

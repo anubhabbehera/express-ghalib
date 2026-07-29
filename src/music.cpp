@@ -34,24 +34,11 @@
 #include "audio.h"
 #include "launcher.h"
 #include "st7305.h"
+#include "storage.h"
 
 namespace {
-constexpr int SD_CLK = 38, SD_CMD = 21, SD_D0 = 39;
-
-bool g_mounted = false;
-
-bool ensure_mounted() {
-  if (g_mounted) return true;
-  SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
-  if (!SD_MMC.begin("/sdcard", true /*1-bit*/, false /*no format*/)) {
-    Serial.println("[MUS] SD mount failed (card inserted? FAT32?)");
-    return false;
-  }
-  g_mounted = true;
-  Serial.printf("[MUS] SD mounted: type=%d size=%lluMB\n", SD_MMC.cardType(),
-                SD_MMC.cardSize() / (1024ULL * 1024ULL));
-  return true;
-}
+// SD mount is shared with journal/notes backups — see storage_sd_mount().
+bool ensure_mounted() { return storage_sd_mount(); }
 
 bool is_audio(const String& n) {
   String l = n; l.toLowerCase();
