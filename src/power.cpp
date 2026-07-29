@@ -27,6 +27,7 @@
 #include "esp_system.h"
 
 #include "config.h"
+#include "files.h"
 #include "launcher.h"
 #include "music.h"
 #include "reminders.h"
@@ -79,12 +80,25 @@ time_t parse_local(const char* s) {
 
 [[noreturn]] void sleep_now(int batt_pct);  // fwd (defined below)
 
-// External power? The USB-Serial-JTAG PHY knows whether a USB host is attached
-// (HWCDC::isPlugged, SOF-based) — that's the reliable signal. The battery-sense
-// fallback (>= 4.10 V -> pct == -1) additionally covers dumb wall chargers,
-// which enumerate no host but do pin the charge rail high.
+// External power? A USB host attached is the reliable signal: SOF-based
+// HWCDC::isPlugged() on USB-Serial-JTAG builds, TinyUSB's tud_mounted() on
+// USB-OTG builds (M10 MSC). The battery-sense fallback (>= 4.10 V ->
+// pct == -1) additionally covers dumb wall chargers, which enumerate no host
+// but do pin the charge rail high.
+#if !ARDUINO_USB_MODE
+extern "C" bool tud_mounted(void);
+#endif
+
+bool usb_host_attached() {
+#if ARDUINO_USB_MODE
+  return HWCDC::isPlugged();
+#else
+  return tud_mounted();
+#endif
+}
+
 bool on_external_power(int batt_pct) {
-  return HWCDC::isPlugged() || batt_pct < 0;
+  return usb_host_attached() || batt_pct < 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +322,7 @@ void idle_cb(lv_timer_t*) {
   // finished song / dismissed alert starts a fresh timeout instead of an
   // instant sleep.
   if (music_playing() || reminders_alert_active() ||
-      reminders_snooze_pending()) {
+      reminders_snooze_pending() || files_usb_active()) {
     lv_disp_trig_activity(nullptr);
     return;
   }
@@ -316,7 +330,7 @@ void idle_cb(lv_timer_t*) {
   if (lv_disp_get_inactive_time(nullptr) > (uint32_t)cfg * 1000) {
     const int b = power_battery_pct();
     Serial.printf("[PWR] idle timeout -> standby dashboard (batt=%d usb=%d)\n",
-                  b, (int)HWCDC::isPlugged());
+                  b, (int)usb_host_attached());
     if (on_external_power(b)) {
       awake_dashboard();  // external power: stay awake as a desk clock
     } else {

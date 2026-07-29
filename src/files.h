@@ -10,3 +10,7 @@
 
 // Open the Files app (volume picker + recents). Registers its leave hook.
 void files_open();
+
+// True while the SD card is exposed to a PC as a USB-MSC drive. Blocks the
+// idle-sleep watchdog (power.cpp) — sleeping would yank the drive from the PC.
+bool files_usb_active();
