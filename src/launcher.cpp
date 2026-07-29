@@ -64,14 +64,32 @@ void tile_focus_cb(lv_event_t* e) {
     lv_obj_set_style_text_color(lv_obj_get_child(tile, i), fg, 0);
 }
 
-// --- arrow keys move focus across the grid ---------------------------------
+// --- arrow keys: true 2D navigation over the row-major 3-column grid -------
+// Left/Right walk the tiles linearly (wrapping via the group); Up/Down jump a
+// whole row (+-3). Down from a row with no tile straight below lands on the
+// last tile; Up/Down stop at the top/bottom edge.
+constexpr int kGridCols = 3;
+
 void tile_key_cb(lv_event_t* e) {
   const uint32_t k = lv_event_get_key(e);
   lv_group_t* g = lv_group_get_default();
-  if (k == LV_KEY_RIGHT || k == LV_KEY_DOWN || k == LV_KEY_NEXT)
+  lv_obj_t* t = lv_event_get_target(e);
+  int idx = 0;
+  for (int i = 0; i < g_tile_n; i++)
+    if (g_tiles[i] == t) { idx = i; break; }
+
+  if (k == LV_KEY_RIGHT || k == LV_KEY_NEXT) {
     lv_group_focus_next(g);
-  else if (k == LV_KEY_LEFT || k == LV_KEY_UP || k == LV_KEY_PREV)
+  } else if (k == LV_KEY_LEFT || k == LV_KEY_PREV) {
     lv_group_focus_prev(g);
+  } else if (k == LV_KEY_DOWN) {
+    if (idx + kGridCols < g_tile_n)
+      lv_group_focus_obj(g_tiles[idx + kGridCols]);
+    else if (idx / kGridCols < (g_tile_n - 1) / kGridCols)
+      lv_group_focus_obj(g_tiles[g_tile_n - 1]);  // short last row
+  } else if (k == LV_KEY_UP) {
+    if (idx - kGridCols >= 0) lv_group_focus_obj(g_tiles[idx - kGridCols]);
+  }
 }
 
 // --- stub app screen (Calendar/Reminders/Music/Settings for now) -----------
