@@ -6,6 +6,7 @@
 #include "rtc.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <sys/time.h>
 #include <time.h>
 #include "config.h"
 
@@ -37,6 +38,16 @@ void set_datetime(int y, int mo, int d, int h, int mi, int s) {
   Wire.endTransmission();
 }
 
+// Mirror the RTC into the system clock so time()/LittleFS mtimes are real
+// (before this, file timestamps counted up from the 1970 epoch each boot).
+void sync_system_clock() {
+  const time_t t = rtc_epoch_utc();
+  if (t <= 0) return;
+  struct timeval tv = {t, 0};
+  settimeofday(&tv, nullptr);
+  Serial.printf("[RTC] system clock synced (epoch %ld)\n", (long)t);
+}
+
 // Parse the compiler's __DATE__ ("Mmm dd yyyy") / __TIME__ ("hh:mm:ss").
 void seed_from_build_time() {
   static const char* mons = "JanFebMarAprMayJunJulAugSepOctNovDec";
@@ -63,6 +74,7 @@ void rtc_init() {
   if (sec == 0xFF) { Serial.println("[RTC] not responding"); return; }
   if (sec & 0x80) seed_from_build_time();  // oscillator stopped -> never set
   else Serial.println("[RTC] clock is running");
+  sync_system_clock();
 }
 
 void rtc_date_mmddyy(char* out) {
@@ -74,6 +86,7 @@ void rtc_date_mmddyy(char* out) {
 
 void rtc_set(int y, int mo, int d, int h, int mi, int s) {
   set_datetime(y, mo, d, h, mi, s);
+  sync_system_clock();
   Serial.printf("[RTC] set to %04d-%02d-%02d %02d:%02d:%02d\n", y, mo, d, h, mi, s);
 }
 
@@ -86,6 +99,20 @@ void rtc_datetime(char* out) {
   const uint8_t y  = bcd2dec(read_reg(0x0A));
   (void)s;
   snprintf(out, 17, "20%02d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+}
+
+time_t rtc_epoch_utc() {
+  const uint8_t sec = read_reg(0x04);
+  if (sec == 0xFF) return 0;                    // not responding
+  struct tm tm = {};
+  tm.tm_sec  = bcd2dec(sec & 0x7F);
+  tm.tm_min  = bcd2dec(read_reg(0x05) & 0x7F);
+  tm.tm_hour = bcd2dec(read_reg(0x06) & 0x3F);
+  tm.tm_mday = bcd2dec(read_reg(0x07) & 0x3F);
+  tm.tm_mon  = bcd2dec(read_reg(0x09) & 0x1F) - 1;
+  tm.tm_year = 100 + bcd2dec(read_reg(0x0A));
+  tm.tm_isdst = 0;
+  return mktime(&tm);                            // TZ=UTC0 -> UTC epoch
 }
 
 void rtc_local_datetime(char* out) {
