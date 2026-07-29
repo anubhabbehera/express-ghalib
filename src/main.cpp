@@ -235,16 +235,16 @@ static void wifi_timer_cb(lv_timer_t*) {  // runs every 1000 ms
 
   lv_obj_t* title = lv_label_create(scr);
   lv_label_set_text(title, "express-ghalib  -  status");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_16, 0);
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
   g_temp_label = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_temp_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_temp_label, &pixel_operator_bold_16, 0);
   lv_label_set_text(g_temp_label, "Temp   -- C");
   lv_obj_align(g_temp_label, LV_ALIGN_TOP_LEFT, 16, 40);
 
   g_hum_label = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_hum_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_hum_label, &pixel_operator_bold_16, 0);
   lv_label_set_text(g_hum_label, "Hum    -- %");
   lv_obj_align(g_hum_label, LV_ALIGN_TOP_LEFT, 16, 72);
 
@@ -285,7 +285,7 @@ static lv_obj_t* g_ble_label = nullptr;
 
   lv_obj_t* title = lv_label_create(scr);
   lv_label_set_text(title, "BLE keyboard host");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_16, 0);
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
   g_ble_label = lv_label_create(scr);
@@ -327,7 +327,7 @@ static void pairing_overlay_show() {
 
   lv_obj_t* hdr = lv_label_create(g_pair_box);
   lv_label_set_text(hdr, LV_SYMBOL_BLUETOOTH "  Pairing");
-  lv_obj_set_style_text_font(hdr, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(hdr, &pixel_operator_bold_16, 0);
   lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 0);
 
   g_pair_label = lv_label_create(g_pair_box);

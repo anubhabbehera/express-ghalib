@@ -219,7 +219,7 @@ void open_editor(const String& key) {
   lv_obj_t* dt = lv_label_create(hdr);
   lv_label_set_text(dt, pretty_date(key).c_str());
   lv_obj_set_style_text_color(dt, lv_color_white(), 0);
-  lv_obj_set_style_text_font(dt, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(dt, &pixel_operator_16, 0);
   lv_obj_align(dt, LV_ALIGN_LEFT_MID, 0, 0);
 
   lv_obj_t* ta = lv_textarea_create(g_edit_scr);
@@ -380,7 +380,7 @@ void build_list() {
   lv_obj_clear_flag(g_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Journal");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

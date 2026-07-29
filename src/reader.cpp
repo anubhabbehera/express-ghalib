@@ -21,23 +21,17 @@
 #include "st7305.h"
 #include "storage.h"
 
-LV_FONT_DECLARE(pixel_operator_16);
-LV_FONT_DECLARE(pixel_operator_32);
-
 namespace {
 
 constexpr const char* kBooksDir = "/books";
 constexpr const char* kPosPath = "/reader_pos.txt";  // LittleFS: "offset|name"
 
-// FONT TEST (UX pass): Pixel Operator — a CC0 proportional pixel font on a
-// 16 px grid (Tahoma-like). Unlike Montserrat (4-bpp antialiased, thresholded
-// to 1-bit by LVGL), it renders pixel-perfect on this panel at 16 px and at
-// the clean 2x doubling (32 px). Cycle sizes in the Reader to A/B:
-//   S = Montserrat 16 (old M baseline), M = Pixel Operator 16, L = PO 32.
-// Bytes per page per S/M/L font — conservative so the label never clips.
-const lv_font_t* kFonts[3] = {&lv_font_montserrat_16, &pixel_operator_16,
-                              &pixel_operator_32};
-const int kPageBytes[3] = {600, 720, 200};
+// Pixel Operator reads pixel-perfect only at grid multiples, so the S/M/L
+// ladder is 16/32/48. Bytes per page are conservative so the label never
+// clips.
+const lv_font_t* kFonts[3] = {&pixel_operator_16, &pixel_operator_32,
+                              &pixel_operator_48};
+const int kPageBytes[3] = {720, 200, 90};
 const char* kSizeName[3] = {"S", "M", "L"};
 
 // ---------------------------------------------------------------------------
@@ -149,7 +143,7 @@ void show_page() {
   lv_label_set_text(g_page_lbl, read_page().c_str());
   char h[48];
   if (g_book.isEmpty()) {
-    snprintf(h, sizeof h, "font test - S=Mont16 M=PixOp16 L=PixOp32");
+    snprintf(h, sizeof h, "font test - S/M/L = PixelOperator 16/32/48");
   } else {
     const int pct =
         g_book_size ? (int)((uint64_t)g_offset * 100 / g_book_size) : 0;
@@ -221,7 +215,7 @@ void open_page_screen() {
   lv_obj_add_flag(g_page_scr, LV_OBJ_FLAG_CLICKABLE);
 
   g_hdr_lbl = lv_label_create(g_page_scr);
-  lv_obj_set_style_text_font(g_hdr_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_hdr_lbl, &pixel_operator_16, 0);
   lv_obj_align(g_hdr_lbl, LV_ALIGN_TOP_LEFT, 8, 4);
 
   g_page_lbl = lv_label_create(g_page_scr);
@@ -249,12 +243,12 @@ void open_page_screen() {
   lv_obj_set_style_pad_column(bar, 6, 0);
 
   lv_obj_t* cap = lv_label_create(bar);
-  lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(cap, &pixel_operator_16, 0);
   lv_label_set_text(cap, LV_SYMBOL_RIGHT "=next  " LV_SYMBOL_LEFT
                                          "=prev  T=top  S=size");
   for (int i = 0; i < 3; i++) {
     lv_obj_t* l = lv_label_create(bar);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(l, &pixel_operator_16, 0);
     lv_label_set_text(l, kSizeName[i]);
     lv_obj_set_style_pad_hor(l, 6, 0);
     lv_obj_set_style_radius(l, 2, 0);
@@ -381,7 +375,7 @@ void build_list() {
   lv_obj_clear_flag(g_list_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_list_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Reader");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

@@ -89,8 +89,9 @@ int          g_edit_id  = -1;
 
 // Body text-size options (bottom bar). One focusable control: Left/Right or
 // Enter change the active size; persisted via config_get/set_text_size.
-const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
-                              &lv_font_montserrat_20};
+// Pixel Operator is crisp only at grid multiples -> ladder is 16/32/48.
+const lv_font_t* kSizes[3] = {&pixel_operator_16, &pixel_operator_32,
+                              &pixel_operator_48};
 const char*      kSizeName[3] = {"S", "M", "L"};
 lv_obj_t*        g_size_lbl[3] = {};
 int              g_size = 1;
@@ -492,7 +493,7 @@ void build_list() {
   lv_obj_clear_flag(g_list_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_list_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Notes");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -594,7 +595,7 @@ void build_picker() {
   lv_obj_clear_flag(g_pick_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_pick_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "New note");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

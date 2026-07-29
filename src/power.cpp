@@ -156,7 +156,7 @@ void dashboard_show(int batt_pct) {
 
   // Big clock + date.
   g_dash_clk = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_clk, &lv_font_montserrat_48, 0);
+  lv_obj_set_style_text_font(g_dash_clk, &pixel_operator_48, 0);
   lv_obj_set_style_text_color(g_dash_clk, lv_color_black(), 0);
   lv_label_set_text(g_dash_clk, now + 11);  // "HH:MM"
   lv_obj_align(g_dash_clk, LV_ALIGN_TOP_MID, 0, 34);
@@ -169,7 +169,7 @@ void dashboard_show(int batt_pct) {
   snprintf(date, sizeof date, "%s, %s %d", kWday[t.tm_wday], kMon[t.tm_mon],
            t.tm_mday);
   g_dash_date = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_date, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_dash_date, &pixel_operator_bold_16, 0);
   lv_obj_set_style_text_color(g_dash_date, lv_color_black(), 0);
   lv_label_set_text(g_dash_date, date);
   lv_obj_align(g_dash_date, LV_ALIGN_TOP_MID, 0, 96);
@@ -195,7 +195,7 @@ void dashboard_show(int batt_pct) {
   lv_obj_set_pos(ln, 0, 134);
 
   g_dash_ag = lv_label_create(scr);
-  lv_obj_set_style_text_font(g_dash_ag, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(g_dash_ag, &pixel_operator_16, 0);
   lv_obj_set_style_text_color(g_dash_ag, lv_color_black(), 0);
   lv_obj_set_style_text_align(g_dash_ag, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_text(g_dash_ag, agenda_text(now).c_str());
