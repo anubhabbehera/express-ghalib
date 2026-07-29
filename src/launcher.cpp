@@ -8,9 +8,11 @@
 #include "config.h"
 #include "files.h"
 #include "journal.h"
+#include "lexicon.h"
 #include "music.h"
 #include "notes.h"
 #include "power.h"
+#include "reader.h"
 #include "reminders.h"
 #include "rtc.h"
 #include "settings.h"
@@ -28,16 +30,18 @@ struct App {
 const App kApps[] = {
     {LV_SYMBOL_EDIT,     "Notes"},
     {LV_SYMBOL_FILE,     "Journal"},
+    {LV_SYMBOL_PASTE,    "Reader"},
     {LV_SYMBOL_LIST,     "Calendar"},
     {LV_SYMBOL_OK,       "Tasks"},
     {LV_SYMBOL_BELL,     "Reminders"},
     {LV_SYMBOL_AUDIO,    "Music"},
+    {LV_SYMBOL_KEYBOARD, "Lexicon"},
     {LV_SYMBOL_DIRECTORY,"Files"},
     {LV_SYMBOL_SETTINGS, "Settings"},
 };
 
 lv_obj_t* g_home = nullptr;      // the launcher screen
-lv_obj_t* g_tiles[8] = {};
+lv_obj_t* g_tiles[12] = {};
 int       g_tile_n = 0;
 lv_obj_t* g_ble_icon  = nullptr;
 lv_obj_t* g_wifi_icon = nullptr;
@@ -112,6 +116,8 @@ void tile_click_cb(lv_event_t* e) {
   const char* name = static_cast<const char*>(lv_event_get_user_data(e));
   if (strcmp(name, "Notes") == 0) notes_open();
   else if (strcmp(name, "Journal") == 0) journal_open();
+  else if (strcmp(name, "Reader") == 0) reader_open();
+  else if (strcmp(name, "Lexicon") == 0) lexicon_open();
   else if (strcmp(name, "Calendar") == 0) calendar_open();
   else if (strcmp(name, "Tasks") == 0) tasks_open();
   else if (strcmp(name, "Reminders") == 0) reminders_open();
@@ -149,7 +155,7 @@ void status_timer_cb(lv_timer_t*) {
 
 lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_obj_t* tile = lv_obj_create(parent);
-  lv_obj_set_size(tile, 112, 76);   // 76: 4 rows of tiles fit under the bar
+  lv_obj_set_size(tile, 88, 76);    // 3 cols x 4 rows fit under the bar
   lv_obj_set_style_radius(tile, 8, 0);
   lv_obj_set_style_border_width(tile, 1, 0);
   lv_obj_set_style_border_color(tile, lv_color_black(), 0);
@@ -165,7 +171,7 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_label_set_text(icon, app.icon);
 
   lv_obj_t* label = lv_label_create(tile);
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
   lv_label_set_text(label, app.name);
 
   lv_obj_add_event_cb(tile, tile_focus_cb, LV_EVENT_FOCUSED, nullptr);
@@ -239,9 +245,9 @@ void launcher_build() {
   lv_obj_set_size(grid, ST7305_W, ST7305_H - 34);
   lv_obj_set_pos(grid, 0, 34);
   lv_obj_set_style_border_width(grid, 0, 0);
-  lv_obj_set_style_pad_all(grid, 12, 0);
+  lv_obj_set_style_pad_all(grid, 10, 0);
   lv_obj_set_style_pad_row(grid, 8, 0);
-  lv_obj_set_style_pad_column(grid, 10, 0);
+  lv_obj_set_style_pad_column(grid, 6, 0);
   lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
