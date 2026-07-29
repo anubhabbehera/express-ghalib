@@ -24,6 +24,13 @@ uint8_t read_reg(uint8_t r) {
   return Wire.available() ? Wire.read() : 0xFF;
 }
 
+void write_reg(uint8_t r, uint8_t v) {
+  Wire.beginTransmission(ADDR);
+  Wire.write(r);
+  Wire.write(v);
+  Wire.endTransmission();
+}
+
 // Set the clock (also clears the oscillator-stop flag).
 void set_datetime(int y, int mo, int d, int h, int mi, int s) {
   Wire.beginTransmission(ADDR);
@@ -72,6 +79,18 @@ void rtc_init() {
 
   const uint8_t sec = read_reg(0x04);
   if (sec == 0xFF) { Serial.println("[RTC] not responding"); return; }
+
+  // A set STOP bit (Control_1 bit 5) freezes the counter while the oscillator
+  // keeps running (OS flag stays clear) — the clock reads fine but never
+  // ticks. Seen in the wild 2026-07-29; clear it defensively every boot.
+  const uint8_t ctl1 = read_reg(0x00);
+  const uint8_t ctl2 = read_reg(0x01);
+  Serial.printf("[RTC] Control_1=0x%02X Control_2=0x%02X\n", ctl1, ctl2);
+  if (ctl1 != 0xFF && (ctl1 & 0x20)) {
+    write_reg(0x00, ctl1 & ~0x20);
+    Serial.println("[RTC] STOP bit was set - cleared (clock was frozen!)");
+  }
+
   if (sec & 0x80) seed_from_build_time();  // oscillator stopped -> never set
   else Serial.println("[RTC] clock is running");
   sync_system_clock();
