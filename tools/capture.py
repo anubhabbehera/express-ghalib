@@ -1,5 +1,14 @@
-import serial, time, sys
-PORT='/dev/cu.usbmodem21201'
+import serial, time, sys, os, glob
+# USB-OTG (TinyUSB CDC) builds may enumerate under a different name than the
+# old USB-Serial-JTAG port — override with EG_PORT, else first usbmodem match.
+def find_port():
+    p = os.environ.get('EG_PORT')
+    if p: return p
+    cands = sorted(glob.glob('/dev/cu.usbmodem*'))
+    for c in cands:
+        if '21201' in c: return c        # historical USB-Serial-JTAG port
+    return cands[0] if cands else '/dev/cu.usbmodem21201'
+PORT=find_port()
 DUR=float(sys.argv[1]) if len(sys.argv)>1 else 200
 t0=time.time()
 buf=b''

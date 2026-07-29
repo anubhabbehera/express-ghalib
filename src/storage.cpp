@@ -20,16 +20,26 @@ bool storage_init() {
   return true;
 }
 
+namespace {
+bool g_sd_mounted = false;
+}
+
 bool storage_sd_mount() {
-  static bool mounted = false;
-  if (mounted) return true;
+  if (g_sd_mounted) return true;
   SD_MMC.setPins(38 /*CLK*/, 21 /*CMD*/, 39 /*D0*/);
   if (!SD_MMC.begin("/sdcard", true /*1-bit*/, false /*no format*/)) {
     Serial.println("[FS] SD mount failed (card inserted? FAT32?)");
     return false;
   }
-  mounted = true;
+  g_sd_mounted = true;
   Serial.printf("[FS] SD mounted: type=%d size=%lluMB\n", SD_MMC.cardType(),
                 SD_MMC.cardSize() / (1024ULL * 1024ULL));
   return true;
+}
+
+void storage_sd_unmount() {
+  if (!g_sd_mounted) return;
+  SD_MMC.end();
+  g_sd_mounted = false;
+  Serial.println("[FS] SD unmounted (handing card to USB-MSC)");
 }
