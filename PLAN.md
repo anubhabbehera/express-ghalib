@@ -251,12 +251,19 @@ scripting), COMM (ESP-NOW mesh chat).
   expanded into month-grid dots + agenda + reminder scheduler.
 - Type-to-jump in month view (digits → go to date).
 
-### M9 — Journal + Notes upgrades
-- **Journal** (`journal.cpp`): date-keyed entries — `T`/Enter = today,
-  `YYYYMMDD` or `jan 1` opens/creates that day; seeded from the existing
-  Journal template; streak / "days written" counter; archive to SD.
-- **Notes**: search across titles+bodies, sort by modified, word count in the
-  editor, export/import to SD.
+### M9 — Journal + Notes upgrades ✅ (branch m9-journal; on-device play-test pending)
+- ✅ **Journal** (`journal.cpp`): date-keyed `/journal/YYYYMMDD.txt` — Today
+  row, `T` shortcut, jump box (`jan 1` / `20260101` / `t`); entries seeded
+  from the Journal template (untouched/blank entries dropped on close);
+  streak + "days written" counter; `A` archives all entries to SD
+  `/export/journal/`.
+- ✅ **Notes**: `/` search across titles+bodies (Enter filters, Esc clears),
+  list sorted by last-modified, live word count in the editor bar, `X`/`I`
+  backup/restore all notes to/from SD `/export/notes/` (file-level, by id).
+- Infra this needed: system clock now mirrors the RTC (settimeofday at boot +
+  after NTP set) so LittleFS mtimes are real; SD mount moved to a shared
+  `storage_sd_mount()` (music + backups); launcher grid reflowed to 4 rows
+  (tiles 112×76) for the 7th tile.
 
 ### M10 — Files + USB transfer
 - **FileWiz** (`files.cpp`): browse LittleFS + SD, open .txt in the editor,
