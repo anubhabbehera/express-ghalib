@@ -157,6 +157,11 @@ String agenda_text(const char* now) {
   return txt;
 }
 
+// The Great Wave (src/img_wave.c, tools/make_wave.py) fills a left band;
+// clock/date/agenda live in the remaining right column, centered on +80.
+extern "C" const lv_img_dsc_t img_wave;
+constexpr lv_coord_t kDashColX = 80;  // right-column center offset from mid
+
 void dashboard_show(int batt_pct) {
   lv_obj_t* scr = lv_obj_create(nullptr);
   g_dash_scr = scr;
@@ -170,12 +175,17 @@ void dashboard_show(int batt_pct) {
   const time_t tt = parse_local(now);
   localtime_r(&tt, &t);
 
+  // Left band: pixelated Great Wave off Kanagawa.
+  lv_obj_t* wave = lv_img_create(scr);
+  lv_img_set_src(wave, &img_wave);
+  lv_obj_set_pos(wave, 10, (ST7305_H - 210) / 2);
+
   // Big clock + date.
   g_dash_clk = lv_label_create(scr);
   lv_obj_set_style_text_font(g_dash_clk, &pixel_operator_48, 0);
   lv_obj_set_style_text_color(g_dash_clk, lv_color_black(), 0);
   lv_label_set_text(g_dash_clk, now + 11);  // "HH:MM"
-  lv_obj_align(g_dash_clk, LV_ALIGN_TOP_MID, 0, 34);
+  lv_obj_align(g_dash_clk, LV_ALIGN_TOP_MID, kDashColX, 34);
 
   static const char* kWday[7] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
                                  "Thursday", "Friday", "Saturday"};
@@ -188,7 +198,7 @@ void dashboard_show(int batt_pct) {
   lv_obj_set_style_text_font(g_dash_date, &pixel_operator_bold_16, 0);
   lv_obj_set_style_text_color(g_dash_date, lv_color_black(), 0);
   lv_label_set_text(g_dash_date, date);
-  lv_obj_align(g_dash_date, LV_ALIGN_TOP_MID, 0, 96);
+  lv_obj_align(g_dash_date, LV_ALIGN_TOP_MID, kDashColX, 96);
 
   // Battery, top-right.
   g_dash_bat = lv_label_create(scr);
@@ -203,7 +213,8 @@ void dashboard_show(int batt_pct) {
   lv_obj_align(g_dash_bat, LV_ALIGN_TOP_RIGHT, -10, 8);
 
   // Divider + agenda: today's remaining events, else the next upcoming one.
-  static lv_point_t seg[2] = {{60, 0}, {(lv_coord_t)(ST7305_W - 60), 0}};
+  // Both live in the right column, clear of the wave.
+  static lv_point_t seg[2] = {{180, 0}, {(lv_coord_t)(ST7305_W - 15), 0}};
   lv_obj_t* ln = lv_line_create(scr);
   lv_line_set_points(ln, seg, 2);
   lv_obj_set_style_line_width(ln, 1, 0);
@@ -214,8 +225,10 @@ void dashboard_show(int batt_pct) {
   lv_obj_set_style_text_font(g_dash_ag, &pixel_operator_16, 0);
   lv_obj_set_style_text_color(g_dash_ag, lv_color_black(), 0);
   lv_obj_set_style_text_align(g_dash_ag, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_width(g_dash_ag, 220);  // wrap inside the right column
+  lv_label_set_long_mode(g_dash_ag, LV_LABEL_LONG_WRAP);
   lv_label_set_text(g_dash_ag, agenda_text(now).c_str());
-  lv_obj_align(g_dash_ag, LV_ALIGN_TOP_MID, 0, 150);
+  lv_obj_align(g_dash_ag, LV_ALIGN_TOP_MID, kDashColX, 150);
 
   lv_obj_t* foot = lv_label_create(scr);
   lv_obj_set_style_text_color(foot, lv_color_black(), 0);
@@ -223,7 +236,7 @@ void dashboard_show(int batt_pct) {
                               ? "battery empty - charge me"
                           : batt_pct < 0 ? "on power - any key to return"
                                          : "press KEY to wake");
-  lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -10);
+  lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, kDashColX, -10);
 
   lv_scr_load(scr);
   lv_refr_now(nullptr);  // paint + flush before we power down / settle
