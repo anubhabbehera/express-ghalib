@@ -99,6 +99,7 @@ lv_obj_t* g_search_ta = nullptr;  // search box on the list screen
 lv_obj_t* g_wc_lbl    = nullptr;  // word count in the editor's bottom bar
 String    g_filter;               // active search query ("" = all notes)
 String    g_status;               // one-shot message on the list screen
+bool      g_focus_search = false; // next build_list: focus the search box
 
 void split_note(const String& full, String& title, String& body) {
   const int nl = full.indexOf('\n');
@@ -398,6 +399,10 @@ void search_apply_cb(lv_event_t*) {  // Enter in the search box
   g_filter = lv_textarea_get_text(g_search_ta);
   g_filter.trim();
   g_filter.toLowerCase();
+  // READY fires on Enter *press*; the release leaks a click onto whatever the
+  // rebuilt list focuses (mono_ui_lessons). Keep focus on the search box so
+  // the stray click lands there harmlessly instead of opening "New note".
+  g_focus_search = true;
   build_list();
 }
 
@@ -428,8 +433,10 @@ void list_key_cb(lv_event_t* e) {
     lv_group_focus_next(g);
   else if (k == LV_KEY_UP || k == LV_KEY_LEFT || k == LV_KEY_PREV)
     lv_group_focus_prev(g);
-  else if (k == LV_KEY_ESC)
-    launcher_go_home();               // -> notes_teardown()
+  else if (k == LV_KEY_ESC) {
+    if (g_filter.isEmpty()) launcher_go_home();      // -> notes_teardown()
+    else { g_filter = ""; build_list(); }            // Esc clears the search
+  }
   else if (k == LV_KEY_DEL) {
     const int id = (int)(intptr_t)lv_event_get_user_data(e);
     if (id >= 0) { delete_note(id); build_list(); }
@@ -537,14 +544,20 @@ void build_list() {
   }
   Serial.printf("[notes] build_list: %d/%u notes (filter='%s')\n", shown,
                 (unsigned)notes.size(), g_filter.c_str());
-  if (!g_filter.isEmpty() && shown == 0) {
-    lv_obj_t* none = lv_label_create(cont);
-    lv_label_set_text(none, "\n   no matches - Esc clears the search");
-    lv_obj_set_style_text_color(none, lv_color_black(), 0);
+  if (!g_filter.isEmpty()) {
+    lv_label_set_text_fmt(hint, "%d match%s - Esc clears", shown,
+                          shown == 1 ? "" : "es");
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -8, 10);
+    if (shown == 0) {
+      lv_obj_t* none = lv_label_create(cont);
+      lv_label_set_text(none, "\n   no matches - Esc clears the search");
+      lv_obj_set_style_text_color(none, lv_color_black(), 0);
+    }
   }
 
   lv_scr_load(g_list_scr);
-  lv_group_focus_obj(nb);
+  lv_group_focus_obj(g_focus_search ? g_search_ta : nb);
+  g_focus_search = false;
   if (old) lv_obj_del_async(old);
 }
 
