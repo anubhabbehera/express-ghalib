@@ -7,6 +7,7 @@
 #include "settings.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_sntp.h>
 #include <lvgl.h>
 #include <time.h>
 #include "config.h"
@@ -72,6 +73,21 @@ lv_obj_t* make_row(lv_obj_t* parent, const char* text, void* ud,
 }
 
 // --- connect + NTP ---------------------------------------------------------
+// Wait for a REAL SNTP answer. getLocalTime() only checks that the system
+// clock looks valid — and since rtc.cpp seeds it from the RTC at boot, that
+// check passes instantly and we'd write the RTC back onto itself (the clock
+// then re-pins to the same time every boot). sntp_get_sync_status() flips to
+// COMPLETED only when an NTP response actually arrived (and self-resets).
+bool ntp_wait_synced(uint32_t timeout_ms) {
+  const uint32_t t0 = millis();
+  while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
+    if (millis() - t0 > timeout_ms) return false;
+    delay(30);
+    lv_timer_handler();
+  }
+  return true;
+}
+
 bool wifi_connect_and_sync(const char* ssid, const char* pass) {
   set_status("Connecting...");
   lv_refr_now(nullptr);  // paint the status before we block
@@ -93,7 +109,7 @@ bool wifi_connect_and_sync(const char* ssid, const char* pass) {
   lv_refr_now(nullptr);
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");  // UTC
   struct tm tm;
-  if (!getLocalTime(&tm, 10000)) {
+  if (!ntp_wait_synced(10000) || !getLocalTime(&tm, 100)) {
     set_status("Connected, NTP failed");
     return false;
   }
@@ -428,9 +444,11 @@ void settings_boot_sync() {
   if (WiFi.status() == WL_CONNECTED) {
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     struct tm tm;
-    if (getLocalTime(&tm, 8000))
+    if (ntp_wait_synced(8000) && getLocalTime(&tm, 100))
       rtc_set(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
               tm.tm_min, tm.tm_sec);
+    else
+      Serial.println("[wifi] boot: NTP timed out, RTC untouched");
   }
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);

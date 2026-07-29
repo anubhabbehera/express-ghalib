@@ -6,6 +6,7 @@
 #include "ble_kbd.h"
 #include "calendar.h"
 #include "config.h"
+#include "journal.h"
 #include "music.h"
 #include "notes.h"
 #include "power.h"
@@ -13,6 +14,7 @@
 #include "rtc.h"
 #include "settings.h"
 #include "st7305.h"
+#include "tasks.h"
 
 namespace {
 
@@ -24,7 +26,9 @@ struct App {
 // Icons are LVGL's built-in vector glyphs — crisp on a 1-bit panel, no assets.
 const App kApps[] = {
     {LV_SYMBOL_EDIT,     "Notes"},
+    {LV_SYMBOL_FILE,     "Journal"},
     {LV_SYMBOL_LIST,     "Calendar"},
+    {LV_SYMBOL_OK,       "Tasks"},
     {LV_SYMBOL_BELL,     "Reminders"},
     {LV_SYMBOL_AUDIO,    "Music"},
     {LV_SYMBOL_SETTINGS, "Settings"},
@@ -105,7 +109,9 @@ void open_app(const char* name) {
 void tile_click_cb(lv_event_t* e) {
   const char* name = static_cast<const char*>(lv_event_get_user_data(e));
   if (strcmp(name, "Notes") == 0) notes_open();
+  else if (strcmp(name, "Journal") == 0) journal_open();
   else if (strcmp(name, "Calendar") == 0) calendar_open();
+  else if (strcmp(name, "Tasks") == 0) tasks_open();
   else if (strcmp(name, "Reminders") == 0) reminders_open();
   else if (strcmp(name, "Music") == 0) music_open();
   else if (strcmp(name, "Settings") == 0) settings_open();
@@ -140,7 +146,7 @@ void status_timer_cb(lv_timer_t*) {
 
 lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_obj_t* tile = lv_obj_create(parent);
-  lv_obj_set_size(tile, 112, 100);
+  lv_obj_set_size(tile, 112, 76);   // 76: 4 rows of tiles fit under the bar
   lv_obj_set_style_radius(tile, 8, 0);
   lv_obj_set_style_border_width(tile, 1, 0);
   lv_obj_set_style_border_color(tile, lv_color_black(), 0);
@@ -231,7 +237,7 @@ void launcher_build() {
   lv_obj_set_pos(grid, 0, 34);
   lv_obj_set_style_border_width(grid, 0, 0);
   lv_obj_set_style_pad_all(grid, 12, 0);
-  lv_obj_set_style_pad_row(grid, 10, 0);
+  lv_obj_set_style_pad_row(grid, 8, 0);
   lv_obj_set_style_pad_column(grid, 10, 0);
   lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);

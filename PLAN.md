@@ -242,7 +242,7 @@ scripting), COMM (ESP-NOW mesh chat).
   for flashing).
 - Deferred: single-key wake into a specific app; RTC slow-clock calibration.
 
-### M8 — Tasks app + calendar power-ups
+### M8 — Tasks app + calendar power-ups ✅ (branch m8-apps; recur.cpp host-tested, on-device play-test pending)
 - **Tasks** (`tasks.cpp`): title + optional due date, done/undone toggle,
   auto-sort by due date, 0–9 quick-toggle, `/littlefs/tasks.json`. Due-dated
   tasks surface in the calendar day agenda and (opt-in) arm reminders.
@@ -251,12 +251,25 @@ scripting), COMM (ESP-NOW mesh chat).
   expanded into month-grid dots + agenda + reminder scheduler.
 - Type-to-jump in month view (digits → go to date).
 
-### M9 — Journal + Notes upgrades
-- **Journal** (`journal.cpp`): date-keyed entries — `T`/Enter = today,
-  `YYYYMMDD` or `jan 1` opens/creates that day; seeded from the existing
-  Journal template; streak / "days written" counter; archive to SD.
-- **Notes**: search across titles+bodies, sort by modified, word count in the
-  editor, export/import to SD.
+### M9 — Journal + Notes upgrades ✅ (branch m9-journal; on-device play-test pending)
+- ✅ **Journal** (`journal.cpp`): date-keyed `/journal/YYYYMMDD.txt` — Today
+  row, `T` shortcut, jump box (`jan 1` / `20260101` / `t`); entries seeded
+  from the Journal template (untouched/blank entries dropped on close);
+  streak + "days written" counter; `A` archives all entries to SD
+  `/export/journal/`.
+- ✅ **Notes**: `/` search across titles+bodies (Enter filters, Esc clears),
+  list sorted by last-modified, live word count in the editor bar, `X`/`I`
+  backup/restore all notes to/from SD `/export/notes/` (file-level, by id).
+- Infra this needed: system clock now mirrors the RTC (settimeofday at boot +
+  after NTP set) so LittleFS mtimes are real; SD mount moved to a shared
+  `storage_sd_mount()` (music + backups); launcher grid reflowed to 4 rows
+  (tiles 112×76) for the 7th tile.
+- Fallout fixed (HW-verified): (a) the settimeofday change made
+  `getLocalTime()` pass instantly, so boot "NTP" wrote the RTC back onto
+  itself — both sync paths now wait for `sntp_get_sync_status()==COMPLETED`;
+  (b) the PCF85063's Control_1 **STOP bit was found set** (counter halted,
+  OS flag clear — clock reads fine but never ticks; probably a hard reset
+  mid-I2C poll). `rtc_init` now logs Control_1/2 and clears STOP every boot.
 
 ### M10 — Files + USB transfer
 - **FileWiz** (`files.cpp`): browse LittleFS + SD, open .txt in the editor,

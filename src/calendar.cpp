@@ -26,15 +26,17 @@
 #include <vector>
 #include "config.h"
 #include "launcher.h"
+#include "recur.h"
 #include "rtc.h"
 #include "st7305.h"
+#include "tasks.h"
 
 namespace {
 
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
-struct EventMeta { int id; String dt; String title; };
+struct EventMeta { int id; String dt; String title; String rep; };
 
 String event_path(int id) { return String("/events/") + id + ".txt"; }
 
@@ -55,13 +57,16 @@ std::vector<EventMeta> list_events() {
     if (slash >= 0) nm = nm.substring(slash + 1);
     if (!nm.endsWith(".txt")) continue;
     const int id = nm.substring(0, nm.length() - 4).toInt();
-    String dt = f.readStringUntil('\n');
-    dt.trim();
+    String l1 = f.readStringUntil('\n');
+    l1.trim();
+    // Line 1 = "YYYY-MM-DD HH:MM" + optional "|<repeat spec>" (see recur.h).
+    String dt = l1.length() > 16 ? l1.substring(0, 16) : l1;
+    String rep = l1.length() > 17 && l1[16] == '|' ? l1.substring(17) : String();
     String title = f.readStringUntil('\n');
     title.trim();
     if (title.length() > 28) title = title.substring(0, 28) + "...";
     if (title.isEmpty()) title = "(untitled)";
-    v.push_back({id, dt, title});
+    v.push_back({id, dt, title, rep});
   }
   // Chronological: ISO-ish date strings sort correctly as text; id breaks ties.
   std::sort(v.begin(), v.end(), [](const EventMeta& a, const EventMeta& b) {
@@ -91,13 +96,14 @@ String read_event(int id) {
   return s;
 }
 
-// Stored as: line 1 = "YYYY-MM-DD HH:MM", line 2 = title, line 3+ = body.
-// list_events() only reads lines 1-2, so the body is transparent to the grid.
+// Stored as: line 1 = "YYYY-MM-DD HH:MM[|repeat]", line 2 = title, line 3+ =
+// body. list_events() only reads lines 1-2, so the body is transparent here.
 void write_event(int id, const String& dt, const String& title,
-                 const String& body) {
+                 const String& body, const String& rep = String()) {
   File f = LittleFS.open(event_path(id), "w");
   if (!f) { Serial.printf("[cal] write failed id=%d\n", id); return; }
   f.print(dt);
+  if (rep.length()) { f.print('|'); f.print(rep); }
   f.print('\n');
   f.print(title);
   if (body.length()) { f.print('\n'); f.print(body); }
@@ -165,6 +171,7 @@ lv_obj_t* g_edit_scr  = nullptr;
 lv_obj_t* g_title_ta  = nullptr;   // dark header: event title
 lv_obj_t* g_time_ta   = nullptr;   // one-line HH:MM
 lv_obj_t* g_body_ta   = nullptr;   // bounded body: details (sentinel = editing)
+lv_obj_t* g_rep_ta    = nullptr;   // one-line repeat spec (see recur.h)
 int       g_edit_id   = -1;
 String    g_edit_date;             // "YYYY-MM-DD" fixed for the event in the editor
 
@@ -202,16 +209,17 @@ void save_current() {
   String title = g_title_ta ? String(lv_textarea_get_text(g_title_ta)) : "";
   String tm    = g_time_ta  ? String(lv_textarea_get_text(g_time_ta))  : "";
   String body  = g_body_ta  ? String(lv_textarea_get_text(g_body_ta))  : "";
+  String rep   = g_rep_ta   ? String(lv_textarea_get_text(g_rep_ta))   : "";
   title.trim(); title.replace("\n", " ");   // title is single-line
   tm.trim();
   const String dt = g_edit_date + " " + tm;  // "YYYY-MM-DD HH:MM"
   if (title.isEmpty() || !valid_dt(dt)) delete_event(g_edit_id);  // drop drafts
-  else write_event(g_edit_id, dt, title, body);
+  else write_event(g_edit_id, dt, title, body, recur_normalize(rep));
 }
 
 void editor_close_to_day() {
   save_current();
-  g_title_ta = g_time_ta = g_body_ta = nullptr;
+  g_title_ta = g_time_ta = g_body_ta = g_rep_ta = nullptr;
   lv_obj_t* es = g_edit_scr;
   g_edit_scr = nullptr;
   g_edit_id = -1;
@@ -224,9 +232,10 @@ void editor_key_cb(lv_event_t* e) {
   if (lv_event_get_key(e) == LV_KEY_ESC) editor_close_to_day();
 }
 
-// Enter walks the form top-down: title -> time -> body.
+// Enter walks the form top-down: title -> time -> repeat -> body.
 void title_ready_cb(lv_event_t*) { if (g_time_ta) lv_group_focus_obj(g_time_ta); }
-void time_ready_cb(lv_event_t*)  { if (g_body_ta) lv_group_focus_obj(g_body_ta); }
+void time_ready_cb(lv_event_t*)  { if (g_rep_ta) lv_group_focus_obj(g_rep_ta); }
+void rep_ready_cb(lv_event_t*)   { if (g_body_ta) lv_group_focus_obj(g_body_ta); }
 
 // Fill the active size chip; apply its font to the body; persist (shared design).
 void size_set(int idx) {
@@ -259,9 +268,9 @@ void size_bar_key_cb(lv_event_t* e) {
   else if (k == LV_KEY_ESC) editor_close_to_day();
 }
 
-// Split a stored event ("date time\ntitle\nbody") into its parts.
+// Split a stored event ("date time[|rep]\ntitle\nbody") into its parts.
 void parse_event(const String& full, String& date, String& tm, String& title,
-                 String& body) {
+                 String& body, String& rep) {
   const int nl1 = full.indexOf('\n');
   const String l1 = nl1 < 0 ? full : full.substring(0, nl1);
   const String rest = nl1 < 0 ? String() : full.substring(nl1 + 1);
@@ -270,17 +279,18 @@ void parse_event(const String& full, String& date, String& tm, String& title,
   body  = nl2 < 0 ? String() : rest.substring(nl2 + 1);
   date  = l1.length() >= 10 ? l1.substring(0, 10) : l1;
   tm    = l1.length() >= 16 ? l1.substring(11, 16) : "09:00";
+  rep   = l1.length() > 17 && l1[16] == '|' ? l1.substring(17) : String();
 }
 
 void open_editor(int id, bool is_new) {
   g_edit_id = id;
 
-  String date, tm, title, body;
+  String date, tm, title, body, rep;
   if (is_new) {
     date = iso_date(g_day_y, g_day_m, g_day_d);
-    tm = "09:00"; title = ""; body = "";
+    tm = "09:00"; title = ""; body = ""; rep = "";
   } else {
-    parse_event(read_event(id), date, tm, title, body);
+    parse_event(read_event(id), date, tm, title, body, rep);
   }
   g_edit_date = date;
 
@@ -347,9 +357,26 @@ void open_editor(int id, bool is_new) {
   lv_textarea_set_placeholder_text(tta, "HH:MM");
   lv_textarea_set_text(tta, tm.c_str());
   lv_obj_add_event_cb(tta, editor_key_cb, LV_EVENT_KEY, nullptr);
-  lv_obj_add_event_cb(tta, time_ready_cb, LV_EVENT_READY, nullptr);  // Enter -> body
+  lv_obj_add_event_cb(tta, time_ready_cb, LV_EVENT_READY, nullptr);  // Enter -> repeat
   lv_group_add_obj(g, tta);
   g_time_ta = tta;
+
+  // Repeat spec, between date and time (grammar in recur.h; blank = one-off).
+  lv_obj_t* rta = lv_textarea_create(strip);
+  lv_obj_set_size(rta, 152, 24);
+  lv_obj_align(rta, LV_ALIGN_RIGHT_MID, -70, 0);
+  lv_textarea_set_one_line(rta, true);
+  lv_obj_set_style_radius(rta, 2, 0);
+  lv_obj_set_style_border_width(rta, 1, 0);
+  lv_obj_set_style_border_color(rta, lv_color_black(), 0);
+  lv_obj_set_style_pad_all(rta, 1, 0);
+  lv_obj_set_style_anim_time(rta, 0, LV_PART_CURSOR);
+  lv_textarea_set_placeholder_text(rta, "repeat: no");
+  lv_textarea_set_text(rta, rep.c_str());
+  lv_obj_add_event_cb(rta, editor_key_cb, LV_EVENT_KEY, nullptr);
+  lv_obj_add_event_cb(rta, rep_ready_cb, LV_EVENT_READY, nullptr);  // Enter -> body
+  lv_group_add_obj(g, rta);
+  g_rep_ta = rta;
 
   // --- bounded body box ---
   lv_obj_t* ta = lv_textarea_create(g_edit_scr);
@@ -503,12 +530,26 @@ void build_day(int y, int m, int d) {
   const String prefix = iso_date(y, m, d);   // "YYYY-MM-DD"
   int shown = 0;
   for (const auto& ev : list_events()) {
-    if (!ev.dt.startsWith(prefix)) continue;
+    const bool recurs = !ev.rep.isEmpty() &&
+                        recur_on(ev.rep, ev.dt.substring(0, 10), prefix);
+    if (!ev.dt.startsWith(prefix) && !recurs) continue;
     String row = hhmm(ev.dt) + "  " + ev.title;
+    if (!ev.rep.isEmpty()) row += "  " LV_SYMBOL_REFRESH;
     make_row(cont, row.c_str(), (void*)(intptr_t)ev.id, open_event_cb, day_key_cb);
     shown++;
   }
   Serial.printf("[cal] day %s: %d events\n", prefix.c_str(), shown);
+
+  // Open tasks due (or overdue) on this day, read-only under the events.
+  String due[4];
+  const int nd = tasks_due_on(prefix, due, 4);
+  for (int i = 0; i < nd; i++) {
+    lv_obj_t* tl = lv_label_create(cont);
+    lv_label_set_text(tl, (String("task:  ") + due[i]).c_str());
+    lv_obj_set_style_text_color(tl, lv_color_black(), 0);
+    lv_obj_set_style_pad_left(tl, 10, 0);
+    lv_obj_set_style_pad_top(tl, 8, 0);
+  }
 
   lv_scr_load(g_day_scr);
   lv_group_focus_obj(nb);
@@ -563,8 +604,14 @@ void open_day_deferred(lv_timer_t* t) {
   build_day(g_view_y, g_view_m, g_sel_d);
 }
 
+// Type-to-jump: typed digits select that day in the shown month ("1" then "7"
+// within 1.5 s = day 17); T jumps back to today.
+int      g_jump_val = 0;
+uint32_t g_jump_ms  = 0;
+
 void month_key_cb(lv_event_t* e) {
-  switch (lv_event_get_key(e)) {
+  const uint32_t k = lv_event_get_key(e);
+  switch (k) {
     case LV_KEY_LEFT:  move_selection(-1); break;
     case LV_KEY_RIGHT: move_selection(+1); break;
     case LV_KEY_UP:    move_selection(-7); break;
@@ -573,6 +620,20 @@ void month_key_cb(lv_event_t* e) {
     case LV_KEY_NEXT:  move_selection(+days_in_month(g_view_y, g_view_m)); break;
     case LV_KEY_ENTER: lv_timer_create(open_day_deferred, 40, nullptr); break;
     case LV_KEY_ESC:   launcher_go_home(); break;  // -> calendar_teardown()
+    default:
+      if (k >= '0' && k <= '9') {
+        const uint32_t now = millis();
+        if (now - g_jump_ms > 1500) g_jump_val = 0;
+        g_jump_ms = now;
+        int v = g_jump_val * 10 + (int)(k - '0');
+        if (v > g_dim) v = (int)(k - '0');   // "3" after "17" starts over
+        g_jump_val = v;
+        if (v >= 1 && v <= g_dim) move_selection(v - g_sel_d);
+      } else if (k == 't' || k == 'T') {
+        g_view_y = g_today_y; g_view_m = g_today_m; g_sel_d = g_today_d;
+        build_month();
+      }
+      break;
   }
 }
 
@@ -609,11 +670,19 @@ void build_month() {
   // Which days have events this month? (dot markers)
   std::set<int> ev_days;
   const String mp = iso_date(g_view_y, g_view_m, 1).substring(0, 8);  // "YYYY-MM-"
-  for (const auto& ev : list_events())
+  for (const auto& ev : list_events()) {
     if (ev.dt.startsWith(mp)) {
       int dd = ev.dt.substring(8, 10).toInt();
       if (dd >= 1 && dd <= 31) ev_days.insert(dd);
     }
+    if (!ev.rep.isEmpty()) {   // recurring: mark every matching day
+      const String anchor = ev.dt.substring(0, 10);
+      for (int dd = 1; dd <= g_dim; dd++)
+        if (!ev_days.count(dd) &&
+            recur_on(ev.rep, anchor, iso_date(g_view_y, g_view_m, dd)))
+          ev_days.insert(dd);
+    }
+  }
 
   // Grid of 6 rows x 7 cols beneath the header.
   const int gy = 48;

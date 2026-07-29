@@ -33,10 +33,15 @@
 #include "audio.h"
 #include "config.h"
 #include "launcher.h"
+#include "recur.h"
 #include "rtc.h"
 #include "st7305.h"
 
 namespace {
+
+String now_str();            // fwd (time helpers live below load_events)
+time_t parse_dt(const String& s);
+String fmt_dt(time_t tt);
 
 constexpr uint32_t POLL_MS          = 10000;  // scheduler tick
 constexpr uint32_t ALERT_TIMEOUT_MS = 60000;  // auto-dismiss an ignored alert
@@ -57,12 +62,31 @@ std::vector<Event> load_events() {
     if (slash >= 0) nm = nm.substring(slash + 1);
     if (!nm.endsWith(".txt")) continue;
     const int id = nm.substring(0, nm.length() - 4).toInt();
-    String dt = f.readStringUntil('\n');
-    dt.trim();
+    String l1 = f.readStringUntil('\n');
+    l1.trim();
+    const String dt = l1.length() > 16 ? l1.substring(0, 16) : l1;
+    const String rep =
+        l1.length() > 17 && l1[16] == '|' ? l1.substring(17) : String();
     String title = f.readStringUntil('\n');
     title.trim();
     if (title.isEmpty()) title = "(untitled)";
-    if (dt.length() >= 16) v.push_back({id, dt.substring(0, 16), title});
+    if (dt.length() < 16) continue;
+    if (rep.isEmpty()) {
+      v.push_back({id, dt, title});
+    } else {
+      // Recurring: materialize the occurrence in the recent fire window (so
+      // the edge-triggered scheduler sees it) and, if that one is already
+      // past, the next upcoming one (for lists / dashboards / sleep arming).
+      const String now = now_str();
+      const String occ = recur_next(rep, dt, fmt_dt(parse_dt(now) - 86400));
+      if (!occ.isEmpty()) {
+        v.push_back({id, occ, title});
+        if (occ <= now) {
+          const String nxt = recur_next(rep, dt, now);
+          if (!nxt.isEmpty()) v.push_back({id, nxt, title});
+        }
+      }
+    }
   }
   std::sort(v.begin(), v.end(),
             [](const Event& a, const Event& b) { return a.dt < b.dt; });
@@ -160,10 +184,11 @@ String read_event(int id) {
 }
 
 void write_event(int id, const String& dt, const String& title,
-                 const String& body) {
+                 const String& body, const String& rep = String()) {
   File f = LittleFS.open(event_path(id), "w");
   if (!f) { Serial.printf("[REM] write failed id=%d\n", id); return; }
   f.print(dt);
+  if (rep.length()) { f.print('|'); f.print(rep); }
   f.print('\n');
   f.print(title);
   if (body.length()) { f.print('\n'); f.print(body); }
@@ -173,7 +198,7 @@ void write_event(int id, const String& dt, const String& title,
 void delete_event(int id) { LittleFS.remove(event_path(id)); }
 
 void parse_event(const String& full, String& date, String& tm, String& title,
-                 String& body) {
+                 String& body, String& rep) {
   const int nl1 = full.indexOf('\n');
   const String l1 = nl1 < 0 ? full : full.substring(0, nl1);
   const String rest = nl1 < 0 ? String() : full.substring(nl1 + 1);
@@ -182,6 +207,7 @@ void parse_event(const String& full, String& date, String& tm, String& title,
   body  = nl2 < 0 ? String() : rest.substring(nl2 + 1);
   date  = l1.length() >= 10 ? l1.substring(0, 10) : l1;
   tm    = l1.length() >= 16 ? l1.substring(11, 16) : "09:00";
+  rep   = l1.length() > 17 && l1[16] == '|' ? l1.substring(17) : String();
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +363,7 @@ lv_obj_t* g_date_ta   = nullptr;   // one-line YYYY-MM-DD
 lv_obj_t* g_time_ta   = nullptr;   // one-line HH:MM
 lv_obj_t* g_body_ta   = nullptr;   // bounded body (sentinel = editing)
 int       g_edit_id   = -1;
+String    g_edit_rep;              // repeat spec carried through the editor
 
 const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
                               &lv_font_montserrat_20};
@@ -358,7 +385,7 @@ void save_current() {
   date.trim(); tm.trim();
   const String dt = date + " " + tm;
   if (title.isEmpty() || !valid_dt(dt)) delete_event(g_edit_id);  // drop drafts
-  else write_event(g_edit_id, dt, title, body);
+  else write_event(g_edit_id, dt, title, body, g_edit_rep);  // keep recurrence
 }
 
 void editor_close_to_list() {
@@ -436,8 +463,9 @@ void open_editor(int id, bool is_new, const String& seed_dt) {
     date = seed_dt.length() >= 10 ? seed_dt.substring(0, 10) : seed_dt;
     tm   = seed_dt.length() >= 16 ? seed_dt.substring(11, 16) : "09:00";
     title = ""; body = "";
+    g_edit_rep = "";
   } else {
-    parse_event(read_event(id), date, tm, title, body);
+    parse_event(read_event(id), date, tm, title, body, g_edit_rep);
   }
 
   g_edit_scr = lv_obj_create(nullptr);
