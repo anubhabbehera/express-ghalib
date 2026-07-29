@@ -64,14 +64,33 @@ void tile_focus_cb(lv_event_t* e) {
     lv_obj_set_style_text_color(lv_obj_get_child(tile, i), fg, 0);
 }
 
-// --- arrow keys move focus across the grid ---------------------------------
+// --- arrow keys: true 2D navigation over the row-major grid ----------------
+// The UI is landscape 400x300: 88px tiles + 6px gaps in a 380px grid = 4 per
+// row (10 apps = rows of 4-4-2). Left/Right walk the tiles linearly (wrapping
+// via the group); Up/Down jump a whole row (+-4). Down from a row with no
+// tile straight below lands on the last tile; Up/Down stop at the edges.
+constexpr int kGridCols = 4;
+
 void tile_key_cb(lv_event_t* e) {
   const uint32_t k = lv_event_get_key(e);
   lv_group_t* g = lv_group_get_default();
-  if (k == LV_KEY_RIGHT || k == LV_KEY_DOWN || k == LV_KEY_NEXT)
+  lv_obj_t* t = lv_event_get_target(e);
+  int idx = 0;
+  for (int i = 0; i < g_tile_n; i++)
+    if (g_tiles[i] == t) { idx = i; break; }
+
+  if (k == LV_KEY_RIGHT || k == LV_KEY_NEXT) {
     lv_group_focus_next(g);
-  else if (k == LV_KEY_LEFT || k == LV_KEY_UP || k == LV_KEY_PREV)
+  } else if (k == LV_KEY_LEFT || k == LV_KEY_PREV) {
     lv_group_focus_prev(g);
+  } else if (k == LV_KEY_DOWN) {
+    if (idx + kGridCols < g_tile_n)
+      lv_group_focus_obj(g_tiles[idx + kGridCols]);
+    else if (idx / kGridCols < (g_tile_n - 1) / kGridCols)
+      lv_group_focus_obj(g_tiles[g_tile_n - 1]);  // short last row
+  } else if (k == LV_KEY_UP) {
+    if (idx - kGridCols >= 0) lv_group_focus_obj(g_tiles[idx - kGridCols]);
+  }
 }
 
 // --- stub app screen (Calendar/Reminders/Music/Settings for now) -----------
@@ -171,7 +190,7 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_label_set_text(icon, app.icon);
 
   lv_obj_t* label = lv_label_create(tile);
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(label, &pixel_operator_16, 0);
   lv_label_set_text(label, app.name);
 
   lv_obj_add_event_cb(tile, tile_focus_cb, LV_EVENT_FOCUSED, nullptr);
@@ -236,7 +255,7 @@ void launcher_build() {
   lv_obj_align(g_batt, LV_ALIGN_RIGHT_MID, -56, 0);
 
   g_clock = lv_label_create(bar);     // live HH:MM from the RTC
-  lv_obj_set_style_text_font(g_clock, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(g_clock, &pixel_operator_bold_16, 0);
   lv_label_set_text(g_clock, "--:--");
   lv_obj_align(g_clock, LV_ALIGN_CENTER, 0, 0);
 

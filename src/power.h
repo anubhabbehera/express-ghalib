@@ -10,11 +10,12 @@
  */
 #pragma once
 
-// Call EARLY in setup(), right after display_init() + storage_init() +
-// rtc_init(). On a dashboard-refresh timer wake this redraws the dashboard and
-// goes straight back to deep sleep — i.e. it does not return. On a user (KEY/
-// BOOT) wake, a due-reminder wake, or a cold boot it returns and the normal
-// full boot continues.
+// Call EARLY in setup(), after storage_init() + rtc_init() but BEFORE
+// display_init(). On a silent poll timer wake (battery, nothing due, no USB)
+// this re-arms and goes straight back to deep sleep without touching the
+// panel — i.e. it does not return, and the screen never flashes. On a user
+// (KEY/BOOT) wake, a due-reminder wake, a wake that finds USB power (-> desk
+// clock via power_init), or a cold boot it returns and the full boot runs.
 void power_early_boot();
 
 // Call LAST in setup(). Replays reminders missed while asleep and starts the

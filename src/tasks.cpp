@@ -151,7 +151,7 @@ void open_editor(int idx) {
   lv_obj_set_style_text_color(ta, lv_color_white(), 0);
   lv_obj_set_style_border_width(ta, 0, 0);
   lv_obj_set_style_anim_time(ta, 0, LV_PART_CURSOR);
-  lv_obj_set_style_text_font(ta, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(ta, &pixel_operator_bold_16, 0);
   lv_textarea_set_placeholder_text(ta, "Task...");
   lv_textarea_set_text(ta, editing ? g_tasks[idx].title.c_str() : "");
   lv_obj_add_event_cb(ta, editor_key_cb, LV_EVENT_KEY, nullptr);
@@ -290,7 +290,7 @@ void build_list() {
   lv_obj_clear_flag(g_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   int open_n = 0;
   for (const Task& t : g_tasks)
     if (!t.done) open_n++;

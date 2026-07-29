@@ -189,7 +189,7 @@ void build_ui() {
   lv_obj_clear_flag(g_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Lexicon");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -212,7 +212,7 @@ void build_ui() {
   lv_group_add_obj(g, ta);
 
   g_word_lbl = lv_label_create(g_scr);
-  lv_obj_set_style_text_font(g_word_lbl, &lv_font_montserrat_18, 0);
+  lv_obj_set_style_text_font(g_word_lbl, &pixel_operator_bold_16, 0);
   lv_obj_set_pos(g_word_lbl, 12, 76);
   lv_label_set_text(g_word_lbl, "");
 

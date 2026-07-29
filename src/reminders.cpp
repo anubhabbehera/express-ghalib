@@ -288,7 +288,7 @@ void raise_alert(const String& when, const String& title) {
 
     lv_obj_t* hdr = lv_label_create(g_alert_box);
     lv_label_set_text(hdr, LV_SYMBOL_BELL "  Reminder");
-    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(hdr, &pixel_operator_bold_16, 0);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 0);
 
     g_alert_label = lv_label_create(g_alert_box);
@@ -365,8 +365,8 @@ lv_obj_t* g_body_ta   = nullptr;   // bounded body (sentinel = editing)
 int       g_edit_id   = -1;
 String    g_edit_rep;              // repeat spec carried through the editor
 
-const lv_font_t* kSizes[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
-                              &lv_font_montserrat_20};
+const lv_font_t* kSizes[3] = {&pixel_operator_16, &pixel_operator_16,
+                              &pixel_operator_bold_16};
 const char*      kSizeName[3] = {"S", "M", "L"};
 lv_obj_t*        g_size_lbl[3] = {};
 int              g_size = 1;
@@ -659,7 +659,7 @@ lv_obj_t* make_row(lv_obj_t* parent, const char* text, void* ud,
 void add_header(lv_obj_t* parent, const char* text) {
   lv_obj_t* h = lv_label_create(parent);
   lv_label_set_text(h, text);
-  lv_obj_set_style_text_font(h, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(h, &pixel_operator_16, 0);
   lv_obj_set_style_pad_top(h, 6, 0);
   lv_obj_set_style_pad_left(h, 10, 0);
   lv_obj_set_style_pad_bottom(h, 2, 0);
@@ -671,7 +671,7 @@ void build_list() {
   lv_obj_clear_flag(g_app_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_app_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Reminders");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 

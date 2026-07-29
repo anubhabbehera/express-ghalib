@@ -56,9 +56,17 @@
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_28 1   /* launcher icons + titles */
 #define LV_FONT_MONTSERRAT_48 1   /* standby dashboard clock */
-// Montserrat is clean and modern; 18px body reads well on the 1-bit panel
-// (bigger = the anti-aliasing-to-1bit thresholding is less visible).
-#define LV_FONT_DEFAULT &lv_font_montserrat_18
+// UX pass 2026-07-29: default is Pixel Operator (CC0 proportional pixel font,
+// 16px grid) converted at 1bpp — pixel-perfect on this panel, unlike the
+// antialiased Montserrat thresholded to 1-bit. Sizes: 16 (+FontAwesome
+// symbols), Bold 16 (+FA, titles), 32 and 48 (2x/3x grid: reading + clock).
+// Sources in tools/fonts/, generated C in src/fonts/ (lv_font_conv --bpp 1).
+#define LV_FONT_CUSTOM_DECLARE                                              \
+  LV_FONT_DECLARE(pixel_operator_16)                                        \
+  LV_FONT_DECLARE(pixel_operator_bold_16)                                   \
+  LV_FONT_DECLARE(pixel_operator_32)                                        \
+  LV_FONT_DECLARE(pixel_operator_48)
+#define LV_FONT_DEFAULT &pixel_operator_16
 
 /*==========================
  *   THEME  (mono)

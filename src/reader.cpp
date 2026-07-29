@@ -26,10 +26,12 @@ namespace {
 constexpr const char* kBooksDir = "/books";
 constexpr const char* kPosPath = "/reader_pos.txt";  // LittleFS: "offset|name"
 
-// Bytes per page per S/M/L font — conservative so the label never clips.
-const lv_font_t* kFonts[3] = {&lv_font_montserrat_14, &lv_font_montserrat_16,
-                              &lv_font_montserrat_20};
-const int kPageBytes[3] = {780, 600, 380};
+// Pixel Operator reads pixel-perfect only at grid multiples, so the S/M/L
+// ladder is 16/32/48. Bytes per page are conservative so the label never
+// clips.
+const lv_font_t* kFonts[3] = {&pixel_operator_16, &pixel_operator_32,
+                              &pixel_operator_48};
+const int kPageBytes[3] = {720, 200, 90};
 const char* kSizeName[3] = {"S", "M", "L"};
 
 // ---------------------------------------------------------------------------
@@ -89,11 +91,27 @@ std::vector<size_t> g_history;    // page-start stack for exact Prev
 
 void build_list();
 
+// Built-in sample page (g_book == "") so fonts can be judged with no SD card.
+constexpr const char* kSample =
+    "The quick brown fox jumps over the lazy dog; 0123456789.\n"
+    "Pack my box with five dozen liquor jugs!\n"
+    "Il1| O0o  rn/m  cl/d  8B3E  5S2Z  ?!,;:'\"()\n\n"
+    "It was a bright cold day in April, and the clocks were striking "
+    "thirteen. Winston Smith, his chin nuzzled into his breast in an "
+    "effort to escape the vile wind, slipped quickly through the glass "
+    "doors of Victory Mansions, though not quickly enough to prevent a "
+    "swirl of gritty dust from entering along with him.";
+
 // --- page rendering --------------------------------------------------------
 String book_path() { return String(kBooksDir) + "/" + g_book; }
 
 // Read one page starting at g_offset; sets g_next.
 String read_page() {
+  if (g_book.isEmpty()) {  // font test page
+    g_book_size = strlen(kSample);
+    g_next = g_book_size;
+    return String(kSample);
+  }
   File f = SD_MMC.open(book_path(), "r");
   if (!f) return "(book vanished - Esc)";
   g_book_size = f.size();
@@ -123,10 +141,14 @@ String read_page() {
 void show_page() {
   if (!g_page_lbl) return;
   lv_label_set_text(g_page_lbl, read_page().c_str());
-  const int pct =
-      g_book_size ? (int)((uint64_t)g_offset * 100 / g_book_size) : 0;
   char h[48];
-  snprintf(h, sizeof h, "%.24s   %d%%", g_book.c_str(), pct);
+  if (g_book.isEmpty()) {
+    snprintf(h, sizeof h, "font test - S/M/L = PixelOperator 16/32/48");
+  } else {
+    const int pct =
+        g_book_size ? (int)((uint64_t)g_offset * 100 / g_book_size) : 0;
+    snprintf(h, sizeof h, "%.24s   %d%%", g_book.c_str(), pct);
+  }
   lv_label_set_text(g_hdr_lbl, h);
 }
 
@@ -187,18 +209,13 @@ void page_key_cb(lv_event_t* e) {
   }
 }
 
-void open_book(const String& name) {
-  if (!storage_sd_mount()) { g_status = "SD not available"; build_list(); return; }
-  g_book = name;
-  g_offset = load_pos(name);
-  g_history.clear();
-
+void open_page_screen() {
   g_page_scr = lv_obj_create(nullptr);
   lv_obj_clear_flag(g_page_scr, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(g_page_scr, LV_OBJ_FLAG_CLICKABLE);
 
   g_hdr_lbl = lv_label_create(g_page_scr);
-  lv_obj_set_style_text_font(g_hdr_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(g_hdr_lbl, &pixel_operator_16, 0);
   lv_obj_align(g_hdr_lbl, LV_ALIGN_TOP_LEFT, 8, 4);
 
   g_page_lbl = lv_label_create(g_page_scr);
@@ -226,12 +243,12 @@ void open_book(const String& name) {
   lv_obj_set_style_pad_column(bar, 6, 0);
 
   lv_obj_t* cap = lv_label_create(bar);
-  lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(cap, &pixel_operator_16, 0);
   lv_label_set_text(cap, LV_SYMBOL_RIGHT "=next  " LV_SYMBOL_LEFT
                                          "=prev  T=top  S=size");
   for (int i = 0; i < 3; i++) {
     lv_obj_t* l = lv_label_create(bar);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(l, &pixel_operator_16, 0);
     lv_label_set_text(l, kSizeName[i]);
     lv_obj_set_style_pad_hor(l, 6, 0);
     lv_obj_set_style_radius(l, 2, 0);
@@ -249,6 +266,21 @@ void open_book(const String& name) {
   size_set(g_size);  // applies font + renders the first page
 }
 
+void open_book(const String& name) {
+  if (!storage_sd_mount()) { g_status = "SD not available"; build_list(); return; }
+  g_book = name;
+  g_offset = load_pos(name);
+  g_history.clear();
+  open_page_screen();
+}
+
+void open_sample() {  // font test page: no SD needed
+  g_book = "";
+  g_offset = 0;
+  g_history.clear();
+  open_page_screen();
+}
+
 // --- book list -------------------------------------------------------------
 void row_focus_cb(lv_event_t* e) {
   lv_obj_t* row = lv_event_get_target(e);
@@ -264,7 +296,8 @@ std::vector<String> g_books;
 
 void row_click_cb(lv_event_t* e) {
   const int idx = (int)(intptr_t)lv_event_get_user_data(e);
-  if (idx < 0) { build_list(); return; }  // "rescan" row
+  if (idx == -2) { open_sample(); return; }  // font test page
+  if (idx < 0) { build_list(); return; }     // "rescan" row
   if (idx < (int)g_books.size()) open_book(g_books[idx]);
 }
 
@@ -342,7 +375,7 @@ void build_list() {
   lv_obj_clear_flag(g_list_scr, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(g_list_scr);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(title, &pixel_operator_bold_16, 0);
   lv_label_set_text(title, "Reader");
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -363,12 +396,11 @@ void build_list() {
   lv_group_t* g = lv_group_get_default();
   lv_group_remove_all_objs(g);
 
-  lv_obj_t* first = nullptr;
+  lv_obj_t* first =
+      make_row(cont, "Aa  Font test page", "S/M/L", -2);
   for (int i = 0; i < (int)g_books.size() && i < 30; i++) {
     const size_t pos = load_pos(g_books[i]);
-    lv_obj_t* r =
-        make_row(cont, g_books[i], pos ? "resume" : "", i);
-    if (!first) first = r;
+    make_row(cont, g_books[i], pos ? "resume" : "", i);
   }
   if (g_books.empty()) {
     lv_obj_t* empty = lv_label_create(cont);
@@ -377,8 +409,7 @@ void build_list() {
                               "   SD card (Files app: USB transfer)"
                             : "\n   SD card not available");
     lv_obj_set_style_text_color(empty, lv_color_black(), 0);
-    // Nothing focusable: park focus on an invisible row so Esc still works.
-    first = make_row(cont, LV_SYMBOL_REFRESH "  rescan", "", -1);
+    make_row(cont, LV_SYMBOL_REFRESH "  rescan", "", -1);
   }
 
   lv_scr_load(g_list_scr);
