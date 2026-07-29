@@ -6,6 +6,7 @@
 #include "rtc.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <sys/time.h>
 #include <time.h>
 #include "config.h"
 
@@ -23,6 +24,13 @@ uint8_t read_reg(uint8_t r) {
   return Wire.available() ? Wire.read() : 0xFF;
 }
 
+void write_reg(uint8_t r, uint8_t v) {
+  Wire.beginTransmission(ADDR);
+  Wire.write(r);
+  Wire.write(v);
+  Wire.endTransmission();
+}
+
 // Set the clock (also clears the oscillator-stop flag).
 void set_datetime(int y, int mo, int d, int h, int mi, int s) {
   Wire.beginTransmission(ADDR);
@@ -35,6 +43,16 @@ void set_datetime(int y, int mo, int d, int h, int mi, int s) {
   Wire.write(dec2bcd(mo));
   Wire.write(dec2bcd((uint8_t)(y % 100)));
   Wire.endTransmission();
+}
+
+// Mirror the RTC into the system clock so time()/LittleFS mtimes are real
+// (before this, file timestamps counted up from the 1970 epoch each boot).
+void sync_system_clock() {
+  const time_t t = rtc_epoch_utc();
+  if (t <= 0) return;
+  struct timeval tv = {t, 0};
+  settimeofday(&tv, nullptr);
+  Serial.printf("[RTC] system clock synced (epoch %ld)\n", (long)t);
 }
 
 // Parse the compiler's __DATE__ ("Mmm dd yyyy") / __TIME__ ("hh:mm:ss").
@@ -61,8 +79,21 @@ void rtc_init() {
 
   const uint8_t sec = read_reg(0x04);
   if (sec == 0xFF) { Serial.println("[RTC] not responding"); return; }
+
+  // A set STOP bit (Control_1 bit 5) freezes the counter while the oscillator
+  // keeps running (OS flag stays clear) — the clock reads fine but never
+  // ticks. Seen in the wild 2026-07-29; clear it defensively every boot.
+  const uint8_t ctl1 = read_reg(0x00);
+  const uint8_t ctl2 = read_reg(0x01);
+  Serial.printf("[RTC] Control_1=0x%02X Control_2=0x%02X\n", ctl1, ctl2);
+  if (ctl1 != 0xFF && (ctl1 & 0x20)) {
+    write_reg(0x00, ctl1 & ~0x20);
+    Serial.println("[RTC] STOP bit was set - cleared (clock was frozen!)");
+  }
+
   if (sec & 0x80) seed_from_build_time();  // oscillator stopped -> never set
   else Serial.println("[RTC] clock is running");
+  sync_system_clock();
 }
 
 void rtc_date_mmddyy(char* out) {
@@ -74,6 +105,7 @@ void rtc_date_mmddyy(char* out) {
 
 void rtc_set(int y, int mo, int d, int h, int mi, int s) {
   set_datetime(y, mo, d, h, mi, s);
+  sync_system_clock();
   Serial.printf("[RTC] set to %04d-%02d-%02d %02d:%02d:%02d\n", y, mo, d, h, mi, s);
 }
 
@@ -86,6 +118,20 @@ void rtc_datetime(char* out) {
   const uint8_t y  = bcd2dec(read_reg(0x0A));
   (void)s;
   snprintf(out, 17, "20%02d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+}
+
+time_t rtc_epoch_utc() {
+  const uint8_t sec = read_reg(0x04);
+  if (sec == 0xFF) return 0;                    // not responding
+  struct tm tm = {};
+  tm.tm_sec  = bcd2dec(sec & 0x7F);
+  tm.tm_min  = bcd2dec(read_reg(0x05) & 0x7F);
+  tm.tm_hour = bcd2dec(read_reg(0x06) & 0x3F);
+  tm.tm_mday = bcd2dec(read_reg(0x07) & 0x3F);
+  tm.tm_mon  = bcd2dec(read_reg(0x09) & 0x1F) - 1;
+  tm.tm_year = 100 + bcd2dec(read_reg(0x0A));
+  tm.tm_isdst = 0;
+  return mktime(&tm);                            // TZ=UTC0 -> UTC epoch
 }
 
 void rtc_local_datetime(char* out) {
