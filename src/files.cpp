@@ -21,6 +21,15 @@
 #include "st7305.h"
 #include "storage.h"
 
+// USB-MSC SD transfer needs the USB-OTG (TinyUSB) build (ARDUINO_USB_MODE=0).
+#if !ARDUINO_USB_MODE
+#define FILES_USB_MSC 1
+#include <USB.h>
+#include <USBMSC.h>
+#include <driver/sdmmc_host.h>
+#include <sdmmc_cmd.h>
+#endif
+
 namespace {
 
 constexpr const char* kRecentsPath = "/recents.txt";
@@ -484,6 +493,154 @@ void build_browser() {
   if (old) lv_obj_del_async(old);
 }
 
+// --- USB-MSC transfer mode -------------------------------------------------
+// The SD card is unmounted locally and handed raw to TinyUSB MSC so a PC sees
+// it as a plain USB drive. The global USBMSC's constructor registers the MSC
+// interface — that must happen before USB.begin(), which the core calls
+// before setup() (CDC_ON_BOOT); capacity + callbacks are filled in on entry.
+#if FILES_USB_MSC
+USBMSC        g_msc;
+sdmmc_card_t  g_card_mem;
+sdmmc_card_t* g_card = nullptr;
+bool          g_usb_active = false;
+volatile bool g_host_ejected = false;
+lv_obj_t*     g_usb_scr = nullptr;
+lv_obj_t*     g_usb_lbl = nullptr;
+lv_timer_t*   g_usb_tim = nullptr;
+
+extern "C" bool tud_mounted(void);
+
+int32_t msc_read(uint32_t lba, uint32_t offset, void* buf, uint32_t bufsize) {
+  if (!g_card || offset) return -1;
+  const uint32_t n = bufsize / g_card->csd.sector_size;
+  if (!n || sdmmc_read_sectors(g_card, buf, lba, n) != ESP_OK) return -1;
+  return (int32_t)(n * g_card->csd.sector_size);
+}
+
+int32_t msc_write(uint32_t lba, uint32_t offset, uint8_t* buf,
+                  uint32_t bufsize) {
+  if (!g_card || offset) return -1;
+  const uint32_t n = bufsize / g_card->csd.sector_size;
+  if (!n || sdmmc_write_sectors(g_card, buf, lba, n) != ESP_OK) return -1;
+  return (int32_t)(n * g_card->csd.sector_size);
+}
+
+bool msc_start_stop(uint8_t, bool start, bool load_eject) {
+  if (load_eject && !start) g_host_ejected = true;  // PC clicked "eject"
+  return true;
+}
+
+bool raw_sd_mount() {
+  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+  sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+  slot.width = 1;
+  slot.clk = GPIO_NUM_38;
+  slot.cmd = GPIO_NUM_21;
+  slot.d0 = GPIO_NUM_39;
+  if (sdmmc_host_init() != ESP_OK) return false;
+  if (sdmmc_host_init_slot(SDMMC_HOST_SLOT_1, &slot) != ESP_OK ||
+      sdmmc_card_init(&host, &g_card_mem) != ESP_OK) {
+    sdmmc_host_deinit();
+    return false;
+  }
+  g_card = &g_card_mem;
+  return true;
+}
+
+void usb_exit() {
+  if (!g_usb_active) return;
+  g_msc.mediaPresent(false);
+  g_msc.end();
+  g_card = nullptr;
+  sdmmc_host_deinit();
+  g_usb_active = false;
+  storage_sd_mount();  // give the VFS back to the rest of the firmware
+  Serial.println("[fil] USB-MSC ejected, SD remounted");
+}
+
+void usb_close_screen() {
+  if (g_usb_tim) { lv_timer_del(g_usb_tim); g_usb_tim = nullptr; }
+  usb_exit();
+  g_usb_lbl = nullptr;
+  lv_obj_t* us = g_usb_scr;
+  g_usb_scr = nullptr;
+  build_root();
+  if (us) lv_obj_del_async(us);
+}
+
+void usb_key_cb(lv_event_t* e) {
+  if (lv_event_get_key(e) == LV_KEY_ESC) usb_close_screen();
+}
+
+void usb_tick_cb(lv_timer_t*) {
+  if (!g_usb_lbl) return;
+  lv_label_set_text(g_usb_lbl, g_host_ejected ? "ejected by PC"
+                               : tud_mounted() ? "connected to PC"
+                                               : "waiting for PC...");
+}
+
+void build_usb() {
+  g_usb_scr = lv_obj_create(nullptr);
+  lv_obj_clear_flag(g_usb_scr, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(g_usb_scr, LV_OBJ_FLAG_CLICKABLE);
+
+  lv_obj_t* icon = lv_label_create(g_usb_scr);
+  lv_obj_set_style_text_font(icon, &lv_font_montserrat_28, 0);
+  lv_label_set_text(icon, LV_SYMBOL_USB "  USB drive");
+  lv_obj_align(icon, LV_ALIGN_CENTER, 0, -40);
+
+  g_usb_lbl = lv_label_create(g_usb_scr);
+  lv_label_set_text(g_usb_lbl, "waiting for PC...");
+  lv_obj_align(g_usb_lbl, LV_ALIGN_CENTER, 0, 0);
+
+  lv_obj_t* hint = lv_label_create(g_usb_scr);
+  lv_label_set_text(hint, "SD is exposed to the PC\nEsc = eject + return");
+  lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 48);
+
+  lv_group_t* g = lv_group_get_default();
+  lv_group_remove_all_objs(g);
+  lv_obj_add_event_cb(g_usb_scr, usb_key_cb, LV_EVENT_KEY, nullptr);
+  lv_group_add_obj(g, g_usb_scr);
+
+  lv_scr_load(g_usb_scr);
+  lv_group_focus_obj(g_usb_scr);
+  g_usb_tim = lv_timer_create(usb_tick_cb, 500, nullptr);
+}
+
+void usb_enter() {
+  if (!g_usb_active) {
+    if (!storage_sd_mount()) {  // prove a card is present before handing off
+      g_status = "SD not available";
+      build_root();
+      return;
+    }
+    storage_sd_unmount();
+    if (!raw_sd_mount()) {
+      storage_sd_mount();
+      g_status = "SD raw init failed";
+      build_root();
+      return;
+    }
+    g_msc.vendorID("ghalib");
+    g_msc.productID("SD Card");
+    g_msc.productRevision("1.0");
+    g_msc.onRead(msc_read);
+    g_msc.onWrite(msc_write);
+    g_msc.onStartStop(msc_start_stop);
+    g_msc.isWritable(true);
+    g_msc.begin(g_card->csd.capacity, g_card->csd.sector_size);
+    g_msc.mediaPresent(true);
+    g_host_ejected = false;
+    g_usb_active = true;
+    Serial.printf("[fil] USB-MSC up: %u sectors x %u\n",
+                  (unsigned)g_card->csd.capacity,
+                  (unsigned)g_card->csd.sector_size);
+  }
+  build_usb();
+}
+#endif  // FILES_USB_MSC
+
 // --- root (volumes + recents) ----------------------------------------------
 void root_click_cb(lv_event_t* e) {
   const int idx = (int)(intptr_t)lv_event_get_user_data(e);
@@ -493,6 +650,13 @@ void root_click_cb(lv_event_t* e) {
     build_browser();
   } else if (idx == -2) {  // SD
     open_path(true, "/");
+  } else if (idx == -3) {  // USB transfer
+#if FILES_USB_MSC
+    usb_enter();
+#else
+    g_status = "needs the USB-OTG build";
+    build_root();
+#endif
   } else {  // recent row
     auto rec = load_recents();
     if (idx >= 0 && idx < (int)rec.size()) open_path(rec[idx].sd, rec[idx].path);
@@ -536,6 +700,8 @@ void build_root() {
                              -1, root_click_cb, root_key_cb);
   make_row(cont, LV_SYMBOL_SD_CARD "  SD card", "", -2, root_click_cb,
            root_key_cb);
+  make_row(cont, LV_SYMBOL_USB "  USB transfer -> PC", "", -3, root_click_cb,
+           root_key_cb);
 
   auto rec = load_recents();
   if (!rec.empty()) {
@@ -555,6 +721,12 @@ void build_root() {
 }
 
 void app_teardown() {
+#if FILES_USB_MSC
+  if (g_usb_tim) { lv_timer_del(g_usb_tim); g_usb_tim = nullptr; }
+  usb_exit();  // Home while exposed: eject cleanly + remount
+  g_usb_lbl = nullptr;
+  if (g_usb_scr) { lv_obj_del_async(g_usb_scr); g_usb_scr = nullptr; }
+#endif
   if (g_edit_ta) { editor_save(); g_edit_ta = nullptr; }
   if (g_edit_scr) { lv_obj_del_async(g_edit_scr); g_edit_scr = nullptr; }
   if (g_ren_scr) { lv_obj_del_async(g_ren_scr); g_ren_scr = nullptr; }
@@ -570,4 +742,12 @@ void files_open() {
   launcher_set_leave_hook(app_teardown);
   g_root_scr = g_brow_scr = g_edit_scr = g_ren_scr = nullptr;
   build_root();
+}
+
+bool files_usb_active() {
+#if FILES_USB_MSC
+  return g_usb_active;
+#else
+  return false;
+#endif
 }
