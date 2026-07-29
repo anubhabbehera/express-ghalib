@@ -64,11 +64,12 @@ void tile_focus_cb(lv_event_t* e) {
     lv_obj_set_style_text_color(lv_obj_get_child(tile, i), fg, 0);
 }
 
-// --- arrow keys: true 2D navigation over the row-major 3-column grid -------
-// Left/Right walk the tiles linearly (wrapping via the group); Up/Down jump a
-// whole row (+-3). Down from a row with no tile straight below lands on the
-// last tile; Up/Down stop at the top/bottom edge.
-constexpr int kGridCols = 3;
+// --- arrow keys: true 2D navigation over the row-major grid ----------------
+// The UI is landscape 400x300: 88px tiles + 6px gaps in a 380px grid = 4 per
+// row (10 apps = rows of 4-4-2). Left/Right walk the tiles linearly (wrapping
+// via the group); Up/Down jump a whole row (+-4). Down from a row with no
+// tile straight below lands on the last tile; Up/Down stop at the edges.
+constexpr int kGridCols = 4;
 
 void tile_key_cb(lv_event_t* e) {
   const uint32_t k = lv_event_get_key(e);
