@@ -5,6 +5,9 @@ nvs,        data, nvs,      0x9000,    0x5000,
 otadata,    data, ota,      0xe000,    0x2000,
 # --- dual app slots (OTA-ready; ~4 MB each is plenty for LVGL+NimBLE+audio) ---
 app0,       app,  ota_0,    0x10000,   0x400000,
-app1,       app,  ota_1,    0x410000,  0x400000,
+app1,       app,  ota_1,    0x410000,  0x3F0000,
+# --- crash core dumps (ESP_COREDUMP_ENABLE_TO_FLASH is on in the Arduino libs;
+#     carved from app1's tail so LittleFS keeps its offset+size = data survives) ---
+coredump,   data, coredump, 0x800000,  0x10000,
 # --- LittleFS: config, note index/bodies, templates, events (~8 MB) ---
 littlefs,   data, spiffs,   0x810000,  0x7F0000,
