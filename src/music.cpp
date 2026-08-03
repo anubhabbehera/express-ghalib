@@ -53,8 +53,13 @@ bool is_mp3(const String& n) {
 std::vector<String> g_tracks;
 SemaphoreHandle_t   g_mux = nullptr;
 
-void tracks_reload() {                          // caller holds g_mux
-  g_tracks.clear();
+// Scan /music into `out`. Deliberately touches neither g_tracks nor g_mux: the
+// SD directory walk + sort + unique is slow, and the audio task blocks on g_mux
+// on every track boundary (pick_next/task_open), so holding the lock across this
+// would stall playback (DMA underrun) whenever a track advances during a browse.
+// The caller publishes the result with an O(1) swap under a brief lock instead.
+void scan_tracks(std::vector<String>& out) {
+  out.clear();
   File dir = SD_MMC.open("/music");
   if (!dir || !dir.isDirectory()) return;
   for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
@@ -64,10 +69,10 @@ void tracks_reload() {                          // caller holds g_mux
     if (slash >= 0) nm = nm.substring(slash + 1);
     // Skip hidden / macOS AppleDouble sidecars ("._song.wav") — they'd double up.
     if (nm.startsWith(".")) continue;
-    if (is_audio(nm)) g_tracks.push_back(nm);
+    if (is_audio(nm)) out.push_back(nm);
   }
-  std::sort(g_tracks.begin(), g_tracks.end());
-  g_tracks.erase(std::unique(g_tracks.begin(), g_tracks.end()), g_tracks.end());
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 
 // --- WAV parsing (16-bit PCM); leaves the file positioned at `data` ----------
@@ -475,10 +480,11 @@ void build_browser() {
   if (!ensure_mounted()) {
     first = make_row(cont, LV_SYMBOL_WARNING "  No SD card  (Esc = back)", nullptr, nullptr);
   } else {
+    std::vector<String> scanned;
+    scan_tracks(scanned);                      // slow SD work, no lock held
     xSemaphoreTake(g_mux, portMAX_DELAY);
-    tracks_reload();
+    g_tracks.swap(scanned);                    // O(1) publish; audio task waits µs
     const int n = (int)g_tracks.size();
-    std::vector<String> snapshot = g_tracks;   // copy for row labels
     xSemaphoreGive(g_mux);
     g_count = n;
     Serial.printf("[MUS] /music: %d track(s)\n", n);
@@ -486,9 +492,12 @@ void build_browser() {
       first = make_row(cont, "(no tracks in /music)", nullptr, nullptr);
     } else {
       const int cur = g_playing ? g_index : -1;   // mark the live track with a >
+      // g_tracks is UI-owned (the audio task only reads it, never writes), and
+      // no other UI code runs concurrently, so reading it here without the lock
+      // is safe now that the list is published.
       for (int i = 0; i < n; i++) {
         String label = (i == cur ? String(LV_SYMBOL_PLAY "  ")
-                                 : String("     ")) + snapshot[i];
+                                 : String("     ")) + g_tracks[i];
         lv_obj_t* row = make_row(cont, label.c_str(), (void*)(intptr_t)i, track_click_cb);
         if (!first) first = row;
         if (i == cur) playing_row = row;
