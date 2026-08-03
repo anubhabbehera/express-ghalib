@@ -151,6 +151,7 @@ lv_obj_t*   g_jump_ta = nullptr;   // jump box on the list screen
 lv_obj_t*   g_body_ta = nullptr;   // editor body
 lv_timer_t* g_autosave = nullptr;
 String      g_edit_key;            // day being edited
+String      g_last_saved;          // body at last write; skip identical autosaves
 String      g_status;              // one-shot message under the header
 bool        g_focus_jump = false;  // next build_list: focus the jump box
 
@@ -160,6 +161,8 @@ void build_list();
 void save_entry() {
   if (!g_body_ta) return;
   String body = lv_textarea_get_text(g_body_ta);
+  if (body == g_last_saved) return;   // unchanged since last write/remove -> skip
+  g_last_saved = body;                // gate both the write and the remove below
   String probe = body;
   probe.trim();
   if (probe.isEmpty() || probe == String(kSeed).substring(0, probe.length())) {
@@ -237,6 +240,7 @@ void open_editor(const String& key) {
 
   lv_scr_load(g_edit_scr);
   lv_group_focus_obj(ta);
+  g_last_saved = body;   // seed: an untouched entry autosaves nothing
   g_autosave = lv_timer_create(autosave_cb, 3000, nullptr);
   (void)fresh;
 }

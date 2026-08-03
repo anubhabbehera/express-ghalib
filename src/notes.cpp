@@ -29,7 +29,13 @@ String note_path(int id) { return String("/notes/") + id + ".txt"; }
 
 // Most-recently-modified first. Mtimes are real since rtc.cpp syncs the system
 // clock from the RTC at boot; ties (old files) fall back to newest id.
-std::vector<NoteMeta> list_notes() {
+//
+// `filter` (already lowercased by the caller) folds search into this single
+// pass: when set, we read the whole file once — deriving the title from line 1
+// and testing the match against the full body in the same read — instead of
+// build_list opening every file a second time via read_note. The unfiltered
+// path stays on the cheap line-1-only read.
+std::vector<NoteMeta> list_notes(const String& filter = "") {
   std::vector<NoteMeta> v;
   File dir = LittleFS.open("/notes");
   if (!dir || !dir.isDirectory()) return v;
@@ -40,7 +46,17 @@ std::vector<NoteMeta> list_notes() {
     if (slash >= 0) nm = nm.substring(slash + 1);
     if (!nm.endsWith(".txt")) continue;
     const int id = nm.substring(0, nm.length() - 4).toInt();
-    String title = f.readStringUntil('\n');
+    String title;
+    if (filter.isEmpty()) {
+      title = f.readStringUntil('\n');       // cheap: title is line 1
+    } else {
+      String content = f.readString();       // one read covers title + match
+      String hay = content;
+      hay.toLowerCase();
+      if (hay.indexOf(filter) < 0) continue; // body/title miss -> skip row
+      const int nl = content.indexOf('\n');
+      title = nl >= 0 ? content.substring(0, nl) : content;
+    }
     title.trim();
     if (title.length() > 32) title = title.substring(0, 32) + "...";
     if (title.isEmpty()) title = "(untitled)";
@@ -86,6 +102,7 @@ lv_obj_t*    g_title_ta = nullptr;   // fixed dark title header
 lv_obj_t*    g_edit_ta  = nullptr;   // bounded body
 lv_timer_t*  g_autosave = nullptr;
 int          g_edit_id  = -1;
+String       g_last_saved;           // content at last write; skip identical autosaves
 
 // Body text-size options (bottom bar). One focusable control: Left/Right or
 // Enter change the active size; persisted via config_get/set_text_size.
@@ -133,14 +150,26 @@ String compose_note() {
 void save_current() {
   if (!g_edit_ta) return;
   const String full = compose_note();
-  if (full == "\n") delete_note(g_edit_id);  // title + body both empty -> drop
-  else write_note(g_edit_id, full.c_str());
+  if (full == "\n") delete_note(g_edit_id);       // title + body both empty -> drop
+  else if (full != g_last_saved) {                // skip a redundant final write
+    write_note(g_edit_id, full.c_str());
+    g_last_saved = full;
+  }
 }
 
+// Autosave every 3 s, but only when the content actually changed since the last
+// write — an unchanged rewrite is a full LittleFS truncate+reprogram, and an
+// editor left open (e.g. idle drops to the desk clock without tearing the
+// editor down) would otherwise wear flash every 3 s indefinitely. Content
+// comparison (vs. a dirty flag) can't miss an edit source: the notes title and
+// journal body textareas have no VALUE_CHANGED handler to hang a flag on.
 void autosave_cb(lv_timer_t*) {
   if (!g_edit_ta) return;
   const String full = compose_note();
-  if (full != "\n") write_note(g_edit_id, full.c_str());
+  if (full != "\n" && full != g_last_saved) {
+    write_note(g_edit_id, full.c_str());
+    g_last_saved = full;
+  }
 }
 
 // Runs when returning to the launcher (Home button / list Esc).
@@ -331,6 +360,7 @@ void open_editor(int id, const char* seed) {
   wc_update();
   // New note (from a template) starts on the title; existing note on the body.
   lv_group_focus_obj(seed ? g_title_ta : g_edit_ta);
+  g_last_saved = compose_note();   // seed: don't rewrite the just-loaded content
   g_autosave = lv_timer_create(autosave_cb, 3000, nullptr);
 }
 
@@ -385,15 +415,6 @@ void restore_from_sd() {
   build_list();
 }
 
-// --- search ----------------------------------------------------------------
-// Title is line 1 of the note file, so one lowercase haystack covers both
-// "search titles" and "search bodies".
-bool note_matches(int id, const String& q) {
-  if (q.isEmpty()) return true;
-  String hay = read_note(id);
-  hay.toLowerCase();
-  return hay.indexOf(q) >= 0;
-}
 
 void search_apply_cb(lv_event_t*) {  // Enter in the search box
   if (!g_search_ta) return;
@@ -535,10 +556,9 @@ void build_list() {
   lv_obj_t* nb = make_row(cont, LV_SYMBOL_PLUS, "New note",
                           (void*)(intptr_t)-1, new_note_cb, list_key_cb);
 
-  auto notes = list_notes();
+  auto notes = list_notes(g_filter);   // filtering happens in the single pass
   int shown = 0;
   for (const auto& n : notes) {
-    if (!note_matches(n.id, g_filter)) continue;
     make_row(cont, LV_SYMBOL_FILE, n.title.c_str(), (void*)(intptr_t)n.id,
              open_note_cb, list_key_cb);
     shown++;

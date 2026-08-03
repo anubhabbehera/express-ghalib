@@ -3,3 +3,6 @@
 !.vscode/extensions.json
 *.bin
 *.elf
+
+# Adversarial perf review findings (local, not tracked)
+perf-review/
