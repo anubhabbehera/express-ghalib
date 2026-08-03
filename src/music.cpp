@@ -333,8 +333,25 @@ lv_timer_t* g_np_timer  = nullptr;
 void build_browser();
 void build_now_playing();
 
+// Change-detection caches for np_poll_cb — reset whenever the now-playing
+// screen (and its labels) is rebuilt, so the first poll after a rebuild always
+// repaints. These are only touched on the UI task (core 1).
+char np_last_name[64]  = "";
+char np_last_state[40] = "";
+char np_last_elapsed[8] = "";
+char np_last_total[8]  = "";
+char np_last_mode[48]  = "";
+int  np_last_vol       = -1;
+
+void np_reset_cache() {
+  np_last_name[0] = np_last_state[0] = np_last_elapsed[0] = '\0';
+  np_last_total[0] = np_last_mode[0] = '\0';
+  np_last_vol = -1;
+}
+
 void kill_np_timer() {
   if (g_np_timer) { lv_timer_del(g_np_timer); g_np_timer = nullptr; }
+  np_reset_cache();
 }
 
 void teardown() {
@@ -492,31 +509,64 @@ void np_poll_cb(lv_timer_t* t) {
     build_browser();
     return;
   }
-  if (g_name_lbl) lv_label_set_text(g_name_lbl, g_name);
-  if (g_state_lbl)
-    lv_label_set_text(g_state_lbl,
-                      (String(g_paused ? LV_SYMBOL_PAUSE "  Paused   "
-                                       : LV_SYMBOL_PLAY "  Playing   ") +
-                       String((int)g_index + 1) + "/" + String((int)g_count)).c_str());
+  // Diff before writing: lv_label_set_text always invalidates (even for
+  // identical text) and any invalidation triggers a full-panel flush, so an
+  // unconditional set per field would flush the whole screen every tick for
+  // values that mostly change once a second or on keypress. We compose into
+  // fixed char buffers (no String heap churn) and only write on a real change.
+  // The shared audio state read here (g_name/g_index/g_paused/g_volume/...) is
+  // owned by the core-0 audio task but already read lock-free here — this only
+  // adds local compares, no new cross-core access.
+  if (g_name_lbl && strcmp(np_last_name, g_name) != 0) {
+    strncpy(np_last_name, g_name, sizeof(np_last_name) - 1);
+    np_last_name[sizeof(np_last_name) - 1] = 0;
+    lv_label_set_text(g_name_lbl, g_name);
+  }
+  if (g_state_lbl) {
+    char sb[40];
+    snprintf(sb, sizeof sb, "%s%d/%d",
+             g_paused ? LV_SYMBOL_PAUSE "  Paused   "
+                      : LV_SYMBOL_PLAY "  Playing   ",
+             (int)g_index + 1, (int)g_count);
+    if (strcmp(np_last_state, sb) != 0) {
+      strcpy(np_last_state, sb);
+      lv_label_set_text(g_state_lbl, sb);
+    }
+  }
 
   const uint32_t el = elapsed_ms(), tot = g_total_ms;
   char eb[8], tb[8];
   fmt_mmss(el, eb, sizeof eb);
   fmt_mmss(tot, tb, sizeof tb);
-  if (g_elapsed_lbl) lv_label_set_text(g_elapsed_lbl, eb);
-  if (g_total_lbl)   lv_label_set_text(g_total_lbl, tb);
-  if (g_bar) {
+  if (g_elapsed_lbl && strcmp(np_last_elapsed, eb) != 0) {
+    strcpy(np_last_elapsed, eb);
+    lv_label_set_text(g_elapsed_lbl, eb);
+  }
+  if (g_total_lbl && strcmp(np_last_total, tb) != 0) {
+    strcpy(np_last_total, tb);
+    lv_label_set_text(g_total_lbl, tb);
+  }
+  if (g_bar) {  // lv_bar_set_value self-no-ops when unchanged (no invalidate)
     int pct = tot ? (int)((uint64_t)el * 100 / tot)
                   : (g_size ? (int)((uint64_t)g_pos * 100 / g_size) : 0);
     lv_bar_set_value(g_bar, pct > 100 ? 100 : pct, LV_ANIM_OFF);
   }
   if (g_vol_bar) lv_bar_set_value(g_vol_bar, g_volume, LV_ANIM_OFF);
-  if (g_vol_lbl) lv_label_set_text(g_vol_lbl, (String((int)g_volume) + "%").c_str());
+  if (g_vol_lbl && g_volume != np_last_vol) {
+    np_last_vol = g_volume;
+    char vb[8];
+    snprintf(vb, sizeof vb, "%d%%", (int)g_volume);
+    lv_label_set_text(g_vol_lbl, vb);
+  }
   if (g_mode_lbl) {
     const char* rep = g_repeat == 0 ? "Off" : g_repeat == 1 ? "All" : "One";
-    lv_label_set_text(g_mode_lbl,
-      (String(LV_SYMBOL_SHUFFLE) + (g_shuffle ? " On    " : " Off    ") +
-       LV_SYMBOL_LOOP + " " + rep).c_str());
+    char mb[48];
+    snprintf(mb, sizeof mb, "%s%s%s %s", LV_SYMBOL_SHUFFLE,
+             g_shuffle ? " On    " : " Off    ", LV_SYMBOL_LOOP, rep);
+    if (strcmp(np_last_mode, mb) != 0) {
+      strcpy(np_last_mode, mb);
+      lv_label_set_text(g_mode_lbl, mb);
+    }
   }
 }
 
@@ -616,7 +666,10 @@ void build_now_playing() {
   if (old) lv_obj_del_async(old);
 
   kill_np_timer();
-  g_np_timer = lv_timer_create(np_poll_cb, 250, nullptr);
+  // 1 s poll: the only sub-second-visible field is the mm:ss elapsed clock,
+  // which ticks at 1 Hz. Combined with the diffing in np_poll_cb, idle/paused
+  // ticks now cause no invalidation and no flush at all.
+  g_np_timer = lv_timer_create(np_poll_cb, 1000, nullptr);
 }
 
 }  // namespace

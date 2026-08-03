@@ -35,6 +35,14 @@
 
 #define LV_DPI_DEF 130 /* ~4.2" at 300x400 */
 
+/* Keypad-only device: input latency IS the responsiveness metric. The default
+ * 30 ms read period means a keystroke (PRESS one poll, RELEASE the next) can
+ * take ~60 ms to register. The main loop already runs lv_timer_handler every
+ * ~5 ms and our read cb is a cheap ring-buffer pop, so a 12 ms read period is
+ * nearly free and roughly halves felt key latency. Display refresh stays on
+ * its own default period, so this only picks presses up sooner. */
+#define LV_INDEV_DEF_READ_PERIOD 12
+
 /*==========================
  *   FEATURES
  *==========================*/
