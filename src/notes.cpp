@@ -86,6 +86,7 @@ lv_obj_t*    g_title_ta = nullptr;   // fixed dark title header
 lv_obj_t*    g_edit_ta  = nullptr;   // bounded body
 lv_timer_t*  g_autosave = nullptr;
 int          g_edit_id  = -1;
+String       g_last_saved;           // content at last write; skip identical autosaves
 
 // Body text-size options (bottom bar). One focusable control: Left/Right or
 // Enter change the active size; persisted via config_get/set_text_size.
@@ -133,14 +134,26 @@ String compose_note() {
 void save_current() {
   if (!g_edit_ta) return;
   const String full = compose_note();
-  if (full == "\n") delete_note(g_edit_id);  // title + body both empty -> drop
-  else write_note(g_edit_id, full.c_str());
+  if (full == "\n") delete_note(g_edit_id);       // title + body both empty -> drop
+  else if (full != g_last_saved) {                // skip a redundant final write
+    write_note(g_edit_id, full.c_str());
+    g_last_saved = full;
+  }
 }
 
+// Autosave every 3 s, but only when the content actually changed since the last
+// write — an unchanged rewrite is a full LittleFS truncate+reprogram, and an
+// editor left open (e.g. idle drops to the desk clock without tearing the
+// editor down) would otherwise wear flash every 3 s indefinitely. Content
+// comparison (vs. a dirty flag) can't miss an edit source: the notes title and
+// journal body textareas have no VALUE_CHANGED handler to hang a flag on.
 void autosave_cb(lv_timer_t*) {
   if (!g_edit_ta) return;
   const String full = compose_note();
-  if (full != "\n") write_note(g_edit_id, full.c_str());
+  if (full != "\n" && full != g_last_saved) {
+    write_note(g_edit_id, full.c_str());
+    g_last_saved = full;
+  }
 }
 
 // Runs when returning to the launcher (Home button / list Esc).
@@ -331,6 +344,7 @@ void open_editor(int id, const char* seed) {
   wc_update();
   // New note (from a template) starts on the title; existing note on the body.
   lv_group_focus_obj(seed ? g_title_ta : g_edit_ta);
+  g_last_saved = compose_note();   // seed: don't rewrite the just-loaded content
   g_autosave = lv_timer_create(autosave_cb, 3000, nullptr);
 }
 
