@@ -19,25 +19,41 @@
 #include "st7305.h"
 #include "tasks.h"
 
+// Custom pixel-art tile icons (src/img_icons.c, tools/make_icons.py). Each
+// has a palette-inverted twin for the focused (solid-black) tile state —
+// see tile_focus_cb.
+extern "C" {
+extern const lv_img_dsc_t img_icon_notes, img_icon_notes_inv;
+extern const lv_img_dsc_t img_icon_journal, img_icon_journal_inv;
+extern const lv_img_dsc_t img_icon_reader, img_icon_reader_inv;
+extern const lv_img_dsc_t img_icon_calendar, img_icon_calendar_inv;
+extern const lv_img_dsc_t img_icon_tasks, img_icon_tasks_inv;
+extern const lv_img_dsc_t img_icon_reminders, img_icon_reminders_inv;
+extern const lv_img_dsc_t img_icon_music, img_icon_music_inv;
+extern const lv_img_dsc_t img_icon_lexicon, img_icon_lexicon_inv;
+extern const lv_img_dsc_t img_icon_files, img_icon_files_inv;
+extern const lv_img_dsc_t img_icon_settings, img_icon_settings_inv;
+}
+
 namespace {
 
 struct App {
-  const char* icon;   // LV_SYMBOL_*
+  const lv_img_dsc_t* icon;
+  const lv_img_dsc_t* icon_inv;
   const char* name;
 };
 
-// Icons are LVGL's built-in vector glyphs — crisp on a 1-bit panel, no assets.
 const App kApps[] = {
-    {LV_SYMBOL_EDIT,     "Notes"},
-    {LV_SYMBOL_FILE,     "Journal"},
-    {LV_SYMBOL_PASTE,    "Reader"},
-    {LV_SYMBOL_LIST,     "Calendar"},
-    {LV_SYMBOL_OK,       "Tasks"},
-    {LV_SYMBOL_BELL,     "Reminders"},
-    {LV_SYMBOL_AUDIO,    "Music"},
-    {LV_SYMBOL_KEYBOARD, "Lexicon"},
-    {LV_SYMBOL_DIRECTORY,"Files"},
-    {LV_SYMBOL_SETTINGS, "Settings"},
+    {&img_icon_notes,     &img_icon_notes_inv,     "Notes"},
+    {&img_icon_journal,   &img_icon_journal_inv,   "Journal"},
+    {&img_icon_reader,    &img_icon_reader_inv,    "Reader"},
+    {&img_icon_calendar,  &img_icon_calendar_inv,  "Calendar"},
+    {&img_icon_tasks,     &img_icon_tasks_inv,     "Tasks"},
+    {&img_icon_reminders, &img_icon_reminders_inv, "Reminders"},
+    {&img_icon_music,     &img_icon_music_inv,     "Music"},
+    {&img_icon_lexicon,   &img_icon_lexicon_inv,   "Lexicon"},
+    {&img_icon_files,     &img_icon_files_inv,     "Files"},
+    {&img_icon_settings,  &img_icon_settings_inv,  "Settings"},
 };
 
 lv_obj_t* g_home = nullptr;      // the launcher screen
@@ -60,8 +76,13 @@ void tile_focus_cb(lv_event_t* e) {
   const lv_color_t fg = focused ? lv_color_white() : lv_color_black();
   lv_obj_set_style_bg_color(tile, bg, 0);
   lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-  for (uint32_t i = 0; i < lv_obj_get_child_cnt(tile); i++)
-    lv_obj_set_style_text_color(lv_obj_get_child(tile, i), fg, 0);
+
+  int idx = 0;
+  for (int i = 0; i < g_tile_n; i++)
+    if (g_tiles[i] == tile) { idx = i; break; }
+  lv_img_set_src(lv_obj_get_child(tile, 0),
+                 focused ? kApps[idx].icon_inv : kApps[idx].icon);
+  lv_obj_set_style_text_color(lv_obj_get_child(tile, 1), fg, 0);
 }
 
 // --- arrow keys: true 2D navigation over the row-major grid ----------------
@@ -185,9 +206,8 @@ lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
   lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
 
-  lv_obj_t* icon = lv_label_create(tile);
-  lv_obj_set_style_text_font(icon, &lv_font_montserrat_28, 0);
-  lv_label_set_text(icon, app.icon);
+  lv_obj_t* icon = lv_img_create(tile);
+  lv_img_set_src(icon, app.icon);
 
   lv_obj_t* label = lv_label_create(tile);
   lv_obj_set_style_text_font(label, &pixel_operator_16, 0);
