@@ -14,6 +14,7 @@
 #include <SD_MMC.h>
 #include <lvgl.h>
 #include <algorithm>
+#include <map>
 #include <vector>
 
 #include "config.h"
@@ -53,6 +54,21 @@ size_t load_pos(const String& name) {
   return pos;
 }
 
+// Load the whole positions file once (used when building the list, which would
+// otherwise call load_pos — a full open+scan — once per book row).
+std::map<String, size_t> load_all_pos() {
+  std::map<String, size_t> out;
+  File f = LittleFS.open(kPosPath, "r");
+  if (!f) return out;
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    const int bar = line.indexOf('|');
+    if (bar > 0) out[line.substring(bar + 1)] = (size_t)line.substring(0, bar).toInt();
+  }
+  f.close();
+  return out;
+}
+
 void save_pos(const String& name, size_t pos) {
   // Rewrite the whole (tiny) file with this book's entry updated/prepended.
   std::vector<String> lines;
@@ -82,6 +98,7 @@ lv_obj_t* g_page_lbl = nullptr;   // the page text
 lv_obj_t* g_hdr_lbl  = nullptr;   // "name  42%"
 lv_obj_t* g_size_lbl[3] = {};
 String    g_book;                 // open book filename (within /books)
+File      g_book_file;            // held open for the whole reading session
 size_t    g_book_size = 0;
 size_t    g_offset = 0;           // current page start
 size_t    g_next = 0;             // next page start (offset + shown bytes)
@@ -90,6 +107,8 @@ String    g_status;
 std::vector<size_t> g_history;    // page-start stack for exact Prev
 
 void build_list();
+
+void close_book_file() { if (g_book_file) g_book_file.close(); }
 
 // Built-in sample page (g_book == "") so fonts can be judged with no SD card.
 constexpr const char* kSample =
@@ -105,21 +124,20 @@ constexpr const char* kSample =
 // --- page rendering --------------------------------------------------------
 String book_path() { return String(kBooksDir) + "/" + g_book; }
 
-// Read one page starting at g_offset; sets g_next.
+// Read one page starting at g_offset; sets g_next. Uses the session-held file
+// handle (opened once in open_book) — a fresh SD_MMC.open per page turn would
+// re-walk the FAT directory on every keystroke on the interactive hot path.
 String read_page() {
   if (g_book.isEmpty()) {  // font test page
     g_book_size = strlen(kSample);
     g_next = g_book_size;
     return String(kSample);
   }
-  File f = SD_MMC.open(book_path(), "r");
-  if (!f) return "(book vanished - Esc)";
-  g_book_size = f.size();
+  if (!g_book_file) return "(book vanished - Esc)";
   const int want = kPageBytes[g_size];
-  f.seek(g_offset);
+  g_book_file.seek(g_offset);
   uint8_t buf[900];
-  const int got = f.read(buf, std::min((size_t)(want + 100), sizeof buf));
-  f.close();
+  const int got = g_book_file.read(buf, std::min((size_t)(want + 100), sizeof buf));
   if (got <= 0) return "(end)";
 
   int cut = std::min(got, want);
@@ -172,6 +190,7 @@ void size_set(int idx) {
 
 void page_close_to_list() {
   if (!g_book.isEmpty()) save_pos(g_book, g_offset);
+  close_book_file();
   g_page_lbl = g_hdr_lbl = nullptr;
   g_book = "";
   lv_obj_t* ps = g_page_scr;
@@ -269,12 +288,16 @@ void open_page_screen() {
 void open_book(const String& name) {
   if (!storage_sd_mount()) { g_status = "SD not available"; build_list(); return; }
   g_book = name;
+  close_book_file();                         // defensive: drop any prior handle
+  g_book_file = SD_MMC.open(book_path(), "r");
+  g_book_size = g_book_file ? g_book_file.size() : 0;   // read once per session
   g_offset = load_pos(name);
   g_history.clear();
   open_page_screen();
 }
 
 void open_sample() {  // font test page: no SD needed
+  close_book_file();
   g_book = "";
   g_offset = 0;
   g_history.clear();
@@ -398,8 +421,10 @@ void build_list() {
 
   lv_obj_t* first =
       make_row(cont, "Aa  Font test page", "S/M/L", -2);
+  const std::map<String, size_t> posmap = load_all_pos();   // one open, not one per row
   for (int i = 0; i < (int)g_books.size() && i < 30; i++) {
-    const size_t pos = load_pos(g_books[i]);
+    auto it = posmap.find(g_books[i]);
+    const size_t pos = it != posmap.end() ? it->second : 0;
     make_row(cont, g_books[i], pos ? "resume" : "", i);
   }
   if (g_books.empty()) {
@@ -419,6 +444,7 @@ void build_list() {
 
 void app_teardown() {
   if (!g_book.isEmpty()) save_pos(g_book, g_offset);
+  close_book_file();
   g_book = "";
   g_page_lbl = g_hdr_lbl = nullptr;
   if (g_page_scr) { lv_obj_del_async(g_page_scr); g_page_scr = nullptr; }

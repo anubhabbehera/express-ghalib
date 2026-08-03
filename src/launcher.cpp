@@ -2,6 +2,7 @@
  * launcher.cpp — home-screen app launcher. See launcher.h.
  */
 #include "launcher.h"
+#include <climits>
 #include <lvgl.h>
 #include "ble_kbd.h"
 #include "calendar.h"
@@ -169,28 +170,57 @@ void tile_click_cb(lv_event_t* e) {
 
 // Periodically reflect clock + battery + BLE/Wi-Fi state in the status bar.
 // (Battery reading lives in power.cpp — shared with the standby dashboard.)
-// Thanks to direct_mode each of these is a cheap partial redraw, not a full one.
+//
+// Change-detection is essential here, not cosmetic: lv_label_set_text always
+// invalidates (even for identical text), and mono_flush_cb always pushes the
+// whole framebuffer (~12 ms blocking SPI) on any invalidation. Without the
+// guards below, this 1 s timer flushes the entire panel every second while the
+// launcher is front, even though the clock changes once a minute and the rest
+// almost never. We diff each field and only touch a label when it truly
+// changed. Caches are seeded to force-first-paint sentinels; the labels persist
+// for the process lifetime (built once) so the statics can never go stale.
 void status_timer_cb(lv_timer_t*) {
+  static char last_clock[6] = "";      // "HH:MM"
+  static int  last_pct      = INT_MIN;
+  static int  last_ble      = -1;      // tri-state so the first tick paints
+  static int  last_wifi     = -1;
+
   if (g_clock) {
     char dt[17];
-    rtc_local_datetime(dt);               // local "YYYY-MM-DD HH:MM"
-    lv_label_set_text(g_clock, dt + 11);  // -> "HH:MM"
-  }
-  if (g_batt) {
-    const int pct = power_battery_pct();
-    if (pct < 0) {
-      lv_label_set_text(g_batt, LV_SYMBOL_CHARGE);  // external power / no battery
-    } else {
-      char b[8];
-      snprintf(b, sizeof(b), "%d%%", pct);
-      lv_label_set_text(g_batt, b);
+    rtc_local_datetime(dt);            // local "YYYY-MM-DD HH:MM"
+    if (strcmp(last_clock, dt + 11) != 0) {
+      strncpy(last_clock, dt + 11, sizeof(last_clock) - 1);
+      lv_label_set_text(g_clock, dt + 11);  // -> "HH:MM"
     }
   }
-  if (g_ble_icon)
-    lv_label_set_text(g_ble_icon, ble_connected() ? LV_SYMBOL_BLUETOOTH
-                                                   : LV_SYMBOL_EYE_CLOSE);
-  if (g_wifi_icon)
-    lv_label_set_text(g_wifi_icon, g_wifi_ok ? LV_SYMBOL_WIFI : "");
+  if (g_batt) {
+    const int pct = power_battery_pct();  // negative = external power / no batt
+    if (pct != last_pct) {
+      last_pct = pct;
+      if (pct < 0) {
+        lv_label_set_text(g_batt, LV_SYMBOL_CHARGE);
+      } else {
+        char b[8];
+        snprintf(b, sizeof(b), "%d%%", pct);
+        lv_label_set_text(g_batt, b);
+      }
+    }
+  }
+  if (g_ble_icon) {
+    const int ble = ble_connected() ? 1 : 0;
+    if (ble != last_ble) {
+      last_ble = ble;
+      lv_label_set_text(g_ble_icon, ble ? LV_SYMBOL_BLUETOOTH
+                                        : LV_SYMBOL_EYE_CLOSE);
+    }
+  }
+  if (g_wifi_icon) {
+    const int wifi = g_wifi_ok ? 1 : 0;
+    if (wifi != last_wifi) {
+      last_wifi = wifi;
+      lv_label_set_text(g_wifi_icon, wifi ? LV_SYMBOL_WIFI : "");
+    }
+  }
 }
 
 lv_obj_t* make_tile(lv_obj_t* parent, const App& app) {
