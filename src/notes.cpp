@@ -29,7 +29,13 @@ String note_path(int id) { return String("/notes/") + id + ".txt"; }
 
 // Most-recently-modified first. Mtimes are real since rtc.cpp syncs the system
 // clock from the RTC at boot; ties (old files) fall back to newest id.
-std::vector<NoteMeta> list_notes() {
+//
+// `filter` (already lowercased by the caller) folds search into this single
+// pass: when set, we read the whole file once — deriving the title from line 1
+// and testing the match against the full body in the same read — instead of
+// build_list opening every file a second time via read_note. The unfiltered
+// path stays on the cheap line-1-only read.
+std::vector<NoteMeta> list_notes(const String& filter = "") {
   std::vector<NoteMeta> v;
   File dir = LittleFS.open("/notes");
   if (!dir || !dir.isDirectory()) return v;
@@ -40,7 +46,17 @@ std::vector<NoteMeta> list_notes() {
     if (slash >= 0) nm = nm.substring(slash + 1);
     if (!nm.endsWith(".txt")) continue;
     const int id = nm.substring(0, nm.length() - 4).toInt();
-    String title = f.readStringUntil('\n');
+    String title;
+    if (filter.isEmpty()) {
+      title = f.readStringUntil('\n');       // cheap: title is line 1
+    } else {
+      String content = f.readString();       // one read covers title + match
+      String hay = content;
+      hay.toLowerCase();
+      if (hay.indexOf(filter) < 0) continue; // body/title miss -> skip row
+      const int nl = content.indexOf('\n');
+      title = nl >= 0 ? content.substring(0, nl) : content;
+    }
     title.trim();
     if (title.length() > 32) title = title.substring(0, 32) + "...";
     if (title.isEmpty()) title = "(untitled)";
@@ -399,15 +415,6 @@ void restore_from_sd() {
   build_list();
 }
 
-// --- search ----------------------------------------------------------------
-// Title is line 1 of the note file, so one lowercase haystack covers both
-// "search titles" and "search bodies".
-bool note_matches(int id, const String& q) {
-  if (q.isEmpty()) return true;
-  String hay = read_note(id);
-  hay.toLowerCase();
-  return hay.indexOf(q) >= 0;
-}
 
 void search_apply_cb(lv_event_t*) {  // Enter in the search box
   if (!g_search_ta) return;
@@ -549,10 +556,9 @@ void build_list() {
   lv_obj_t* nb = make_row(cont, LV_SYMBOL_PLUS, "New note",
                           (void*)(intptr_t)-1, new_note_cb, list_key_cb);
 
-  auto notes = list_notes();
+  auto notes = list_notes(g_filter);   // filtering happens in the single pass
   int shown = 0;
   for (const auto& n : notes) {
-    if (!note_matches(n.id, g_filter)) continue;
     make_row(cont, LV_SYMBOL_FILE, n.title.c_str(), (void*)(intptr_t)n.id,
              open_note_cb, list_key_cb);
     shown++;
