@@ -503,25 +503,36 @@ USBMSC        g_msc;
 sdmmc_card_t  g_card_mem;
 sdmmc_card_t* g_card = nullptr;
 bool          g_usb_active = false;
+volatile bool g_msc_closing = false;
 volatile bool g_host_ejected = false;
 lv_obj_t*     g_usb_scr = nullptr;
 lv_obj_t*     g_usb_lbl = nullptr;
 lv_timer_t*   g_usb_tim = nullptr;
 
 extern "C" bool tud_mounted(void);
+extern "C" bool tud_disconnect(void);
+extern "C" bool tud_connect(void);
+
+// A failed callback must never return instantly: the usbd task (prio 24) and
+// a retrying host turn that into a hot loop on core 0 that starves IDLE0 and
+// trips the 5 s task WDT (coredump-verified). One tick of delay paces it.
+int32_t msc_fail() {
+  vTaskDelay(1);
+  return -1;
+}
 
 int32_t msc_read(uint32_t lba, uint32_t offset, void* buf, uint32_t bufsize) {
-  if (!g_card || offset) return -1;
+  if (g_msc_closing || !g_card || offset) return msc_fail();
   const uint32_t n = bufsize / g_card->csd.sector_size;
-  if (!n || sdmmc_read_sectors(g_card, buf, lba, n) != ESP_OK) return -1;
+  if (!n || sdmmc_read_sectors(g_card, buf, lba, n) != ESP_OK) return msc_fail();
   return (int32_t)(n * g_card->csd.sector_size);
 }
 
 int32_t msc_write(uint32_t lba, uint32_t offset, uint8_t* buf,
                   uint32_t bufsize) {
-  if (!g_card || offset) return -1;
+  if (g_msc_closing || !g_card || offset) return msc_fail();
   const uint32_t n = bufsize / g_card->csd.sector_size;
-  if (!n || sdmmc_write_sectors(g_card, buf, lba, n) != ESP_OK) return -1;
+  if (!n || sdmmc_write_sectors(g_card, buf, lba, n) != ESP_OK) return msc_fail();
   return (int32_t)(n * g_card->csd.sector_size);
 }
 
@@ -549,12 +560,24 @@ bool raw_sd_mount() {
 
 void usb_exit() {
   if (!g_usb_active) return;
+  // Detach at the BUS level before touching MSC state. Once media_present is
+  // false (end() also sets it), the core's read10 wrapper answers a retrying
+  // host with 0 = "poll me again" WITHOUT calling our callback; TinyUSB then
+  // re-queues that retry forever, the usbd task (prio 24, core 0) never
+  // blocks, IDLE0 starves and the 5 s task WDT reboots the box (two
+  // coredumps: USBMSC.cpp:114 mid-command, usbd.c:705 event pump). A host
+  // that saw the device unplug sends nothing, so the storm can't start.
+  g_msc_closing = true;   // fail any in-flight I/O, paced by msc_fail()
+  tud_disconnect();       // host sees a physical unplug (CDC drops too)
+  delay(300);             // let the bus settle and in-flight commands die
   g_msc.mediaPresent(false);
   g_msc.end();
   g_card = nullptr;
   sdmmc_host_deinit();
   g_usb_active = false;
+  g_msc_closing = false;
   storage_sd_mount();  // give the VFS back to the rest of the firmware
+  tud_connect();       // re-enumerate: CDC returns, MSC reports no medium
   Serial.println("[fil] USB-MSC ejected, SD remounted");
 }
 
