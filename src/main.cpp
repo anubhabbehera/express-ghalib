@@ -6,6 +6,7 @@
  */
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_sleep.h>
 #include <lvgl.h>
 #include "audio.h"
 #include "ble_kbd.h"
@@ -358,7 +359,11 @@ static void pairing_timer_cb(lv_timer_t*) {
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  // Only spend the USB-CDC settle delay when we'll actually stay awake. On the
+  // common ~60 s timer wake (silent poll), power_early_boot() re-sleeps without
+  // ever using serial, so the 200 ms would be pure active-CPU burn against the
+  // tiny standby budget. Cold boot / KEY wake keep the delay.
+  if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) delay(200);
   Serial.println("express-ghalib boot");
 
   storage_init();      // mount LittleFS for notes/config
