@@ -83,11 +83,17 @@ void buttons_poll() {
   // watchdog explicitly.
   if (key_tap || key_long || !digitalRead(PIN_BOOT))
     lv_disp_trig_activity(nullptr);
-  if (key_long && !ble_kbd_pairing()) {
-    Serial.println("[BTN] KEY (hold) -> BLE pairing mode");
-    ble_kbd_start_pairing();
-  } else if (key_tap) {
-    if (reminders_alert_active()) {  // a reminder is showing -> KEY dismisses it
+  if (key_tap || key_long) {
+    if (ble_kbd_pairing()) {
+      // The pairing screen has no timeout: any KEY press closes it. (The hold
+      // that opened it can't land here — long_fired fires once per press and
+      // suppresses that press's tap.)
+      Serial.println("[BTN] KEY -> close BLE pairing screen");
+      ble_kbd_stop_pairing();
+    } else if (key_long) {
+      Serial.println("[BTN] KEY (hold) -> BLE pairing screen");
+      ble_kbd_start_pairing();
+    } else if (reminders_alert_active()) {  // reminder showing -> KEY dismisses
       Serial.println("[BTN] KEY -> dismiss reminder");
       reminders_dismiss();
     } else {
