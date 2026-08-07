@@ -13,7 +13,9 @@
 namespace {
 constexpr uint16_t HID_SERVICE   = 0x1812;   // Human Interface Device
 constexpr uint16_t HID_REPORT    = 0x2A4D;   // Report characteristic
-constexpr uint16_t APPEARANCE_KEYBOARD = 0x03C1;
+// Appearance is <10-bit category><6-bit subcategory>; category 15 = HID, which
+// covers keyboard (0x03C1), keypad, and the generic 0x03C0 some kbds report.
+constexpr uint16_t APPEARANCE_CAT_HID = 15;
 
 // --- decoded-key ring buffer (NimBLE task -> LVGL task) --------------------
 constexpr int QCAP = 32;
@@ -96,20 +98,94 @@ NimBLEClient* g_client = nullptr;
 char g_status[48] = "scanning...";
 char g_last_report[48] = "";
 
-// --- re-pairing mode -------------------------------------------------------
-// A long-press requests pairing (main task sets the flag); ble_loop() performs
-// the disconnect + forget-bonds, then scans a fixed window and picks the HID
-// with the strongest RSSI so proximity selects the intended keyboard.
-constexpr uint32_t PAIR_WINDOW_MS = 3000;
-volatile bool g_pair_request = false;  // set by ble_kbd_start_pairing()
-volatile bool g_pairing      = false;  // true during the RSSI window
-uint32_t      g_pair_deadline = 0;     // millis() when the window closes
-NimBLEAddress g_pair_best;             // strongest-RSSI HID so far
-bool          g_pair_have_best = false;
-int           g_pair_best_rssi = -128;
-char          g_pair_best_name[32] = "";
-
 void set_status(const char* s) { strncpy(g_status, s, sizeof(g_status) - 1); }
+
+// --- pairing mode ----------------------------------------------------------
+// A long-press opens pairing (main task sets the flag); ble_loop() drops the
+// active link and rescans, collecting EVERY HID accessory in range into
+// g_pair_list for the overlay. The mode has no deadline — it stays open until
+// ble_kbd_stop_pairing() — so the list keeps filling while the user watches.
+// Once no new accessory has appeared for PAIR_SETTLE_MS we bond the strongest
+// one: without a working keyboard, proximity is the only selector available.
+constexpr uint32_t PAIR_SETTLE_MS = 2500;
+constexpr uint32_t PAIR_CONNECT_MS = 4000;  // connect leash while pairing
+constexpr int      PAIR_NEAR_RSSI  = -55;   // "held against the board"
+constexpr int      PAIR_MAX       = 8;
+
+struct PairDev {
+  NimBLEAddress addr;
+  char          name[24];
+  int           rssi;
+  bool          hid;      // advertised as HID (preferred when picking a target)
+  bool          failed;   // connect already failed; skip when picking a target
+};
+PairDev      g_pair_list[PAIR_MAX];
+int          g_pair_count = 0;
+portMUX_TYPE g_pairmux = portMUX_INITIALIZER_UNLOCKED;
+
+volatile bool g_pair_request = false;  // set by ble_kbd_start_pairing()
+volatile bool g_pair_stop    = false;  // set by ble_kbd_stop_pairing()
+volatile bool g_pairing      = false;  // true while pairing mode is open
+volatile uint32_t g_pair_settle = 0;   // millis() when the list is "settled"
+NimBLEAddress g_pair_target;           // accessory being bonded (UI marker)
+bool          g_pair_have_target = false;
+
+// Record/refresh an accessory in the pairing list; true if newly added.
+// `name` is null/empty when the device hasn't given one yet. Runs on the NimBLE
+// host task.
+bool pair_note(const NimBLEAddress& addr, const char* name, int rssi, bool hid) {
+  bool added = false;
+  portENTER_CRITICAL(&g_pairmux);
+  int i = 0;
+  for (; i < g_pair_count; i++)
+    if (g_pair_list[i].addr == addr) break;
+  if (i == g_pair_count) {
+    if (g_pair_count >= PAIR_MAX) { portEXIT_CRITICAL(&g_pairmux); return false; }
+    g_pair_count++;
+    g_pair_list[i].failed = false;
+    g_pair_list[i].hid    = false;
+    g_pair_list[i].name[0] = 0;
+    added = true;
+  }
+  g_pair_list[i].addr = addr;
+  g_pair_list[i].rssi = rssi;
+  // The name and the HID hint often arrive in different packets (advert vs
+  // scan response), so accumulate rather than overwrite — a later nameless
+  // advert must not erase a name we already learned.
+  if (hid) g_pair_list[i].hid = true;
+  if (name && *name) {
+    strncpy(g_pair_list[i].name, name, sizeof(g_pair_list[i].name) - 1);
+    g_pair_list[i].name[sizeof(g_pair_list[i].name) - 1] = 0;
+  }
+  portEXIT_CRITICAL(&g_pairmux);
+  // A newly seen accessory restarts the settle clock so a device that shows up
+  // late still gets to compete on RSSI. Repeat adverts (the duplicate filter is
+  // off while pairing) only refresh the signal reading.
+  if (added) g_pair_settle = millis() + PAIR_SETTLE_MS;
+  return added;
+}
+
+// Serial-only "have I logged this address yet" set, so the pairing log can
+// cover every advertiser (the panel list is filtered and only holds PAIR_MAX).
+// Runs on the NimBLE host task; reset whenever pairing opens.
+constexpr int DBG_MAX = 48;
+NimBLEAddress g_dbg_seen[DBG_MAX];
+int           g_dbg_count = 0;
+
+bool dbg_first_sighting(const NimBLEAddress& addr) {
+  for (int i = 0; i < g_dbg_count; i++)
+    if (g_dbg_seen[i] == addr) return false;
+  if (g_dbg_count >= DBG_MAX) return false;
+  g_dbg_seen[g_dbg_count++] = addr;
+  return true;
+}
+
+void pair_mark_failed(const NimBLEAddress& addr) {
+  portENTER_CRITICAL(&g_pairmux);
+  for (int i = 0; i < g_pair_count; i++)
+    if (g_pair_list[i].addr == addr) { g_pair_list[i].failed = true; break; }
+  portEXIT_CRITICAL(&g_pairmux);
+}
 
 // --- NKRO bitmap keyboard report (8BitDo report-mode, 16 bytes) -----------
 // Format (reverse-engineered + verified): byte[0] = HID modifier bitmap;
@@ -191,32 +267,40 @@ ClientCB g_client_cb;
 // --- scan callbacks --------------------------------------------------------
 class ScanCB : public NimBLEScanCallbacks {
   void onResult(const NimBLEAdvertisedDevice* d) override {
+    // "Looks like HID" from the advert alone. Note this is a HINT, not a test:
+    // plenty of keyboards put neither the HID UUID nor an appearance in the
+    // advertisement (the HID service only shows up in the GATT table after you
+    // connect), which is exactly why they never appeared in the old scan.
     const bool hid =
         d->isAdvertisingService(NimBLEUUID(HID_SERVICE)) ||
-        (d->haveAppearance() && d->getAppearance() == APPEARANCE_KEYBOARD);
-    if (!hid) return;  // discovery is confirmed; only care about HID now
+        (d->haveAppearance() && (d->getAppearance() >> 6) == APPEARANCE_CAT_HID);
 
     std::string name = d->getName();
-    Serial.printf("[BLE] HID device: %s  %s  rssi=%d\n",
-                  name.empty() ? "(no name)" : name.c_str(),
-                  d->getAddress().toString().c_str(), d->getRSSI());
+    const char* nm = name.empty() ? "(unnamed)" : name.c_str();
 
-    // Re-pairing: don't lock the first HID — collect the whole window and keep
-    // the strongest signal, so bringing the new keyboard close selects it.
+    // Pairing: list every NAMED device plus anything advertising HID, so a
+    // keyboard that hides its HID UUID still shows up and can be picked. The
+    // real HID check happens after connecting (do_connect drops non-keyboards).
     if (g_pairing) {
-      const int rssi = d->getRSSI();
-      if (!g_pair_have_best || rssi > g_pair_best_rssi) {
-        g_pair_best      = d->getAddress();
-        g_pair_best_rssi = rssi;
-        g_pair_have_best = true;
-        strncpy(g_pair_best_name, name.empty() ? "keyboard" : name.c_str(),
-                sizeof(g_pair_best_name) - 1);
-        g_pair_best_name[sizeof(g_pair_best_name) - 1] = 0;
-        snprintf(g_status, sizeof(g_status), "pairing: found %s",
-                 g_pair_best_name);
-      }
-      return;  // decision is made in ble_loop() when the window closes
+      // Serial gets EVERY advertiser, named or not — when a keyboard fails to
+      // show up on the panel this log is what says whether it is advertising at
+      // all (nothing here = not a BLE device, or not in pairing mode). First
+      // sightings only: the duplicate filter is off while pairing, so every
+      // device re-reports several times a second.
+      if (dbg_first_sighting(d->getAddress()))
+        Serial.printf("[BLE] adv: %-20s %s rssi=%d hid=%d appear=0x%04X\n", nm,
+                      d->getAddress().toString().c_str(), d->getRSSI(), (int)hid,
+                      d->haveAppearance() ? d->getAppearance() : 0);
+
+      if (!hid && name.empty()) return;   // unnamed non-HID: noise on the panel
+      pair_note(d->getAddress(), name.c_str(), d->getRSSI(), hid);
+      return;  // the target is chosen in ble_loop() once the list settles
     }
+
+    if (!hid) return;  // outside pairing, auto-connect only to advertised HID
+
+    Serial.printf("[BLE] HID device: %s  %s  rssi=%d\n", nm,
+                  d->getAddress().toString().c_str(), d->getRSSI());
 
     if (!g_have_target) {
       g_target = d->getAddress();
@@ -231,12 +315,18 @@ class ScanCB : public NimBLEScanCallbacks {
 ScanCB g_scan_cb;
 
 // Blocking connect + bond + subscribe. Runs on the main task via ble_loop().
+//
+// NOTE: connect() blocks this task, and with it lv_timer_handler() and
+// buttons_poll(). NimBLE's 30 s default is far too long for the pairing screen
+// — a candidate that never answers would freeze the UI (and the KEY that closes
+// the screen) for half a minute — so pairing attempts get a short leash.
 void do_connect() {
   g_state = CONNECTING;
   Serial.printf("[BLE] connecting to %s ...\n", g_target.toString().c_str());
 
   g_client = NimBLEDevice::createClient();
   g_client->setClientCallbacks(&g_client_cb, false);
+  if (g_pairing) g_client->setConnectTimeout(PAIR_CONNECT_MS);
 
   if (!g_client->connect(g_target)) {
     Serial.println("[BLE] connect FAILED");
@@ -244,7 +334,16 @@ void do_connect() {
     g_client = nullptr;
     g_state = SCANNING;
     g_have_target = false;
-    set_status("connect failed; rescanning");
+    if (g_pairing) {
+      // Stay on the pairing screen: blacklist this one, keep listing, and let
+      // the settle timer pick the next-strongest candidate.
+      pair_mark_failed(g_target);
+      g_pair_have_target = false;
+      g_pair_settle = millis() + PAIR_SETTLE_MS;
+      set_status("pair failed; still scanning");
+    } else {
+      set_status("connect failed; rescanning");
+    }
     NimBLEDevice::getScan()->start(0);
     return;
   }
@@ -255,6 +354,19 @@ void do_connect() {
   NimBLERemoteService* svc = g_client->getService(NimBLEUUID(HID_SERVICE));
   if (!svc) {
     Serial.println("[BLE] no HID service found after connect");
+    if (g_pairing) {  // not a keyboard after all — drop it and keep listing
+      pair_mark_failed(g_target);
+      g_pair_have_target = false;
+      g_client->disconnect();
+      NimBLEDevice::deleteClient(g_client);
+      g_client = nullptr;
+      g_have_target = false;
+      g_state = SCANNING;
+      g_pair_settle = millis() + PAIR_SETTLE_MS;
+      set_status("not a keyboard; still scanning");
+      NimBLEDevice::getScan()->start(0);
+      return;
+    }
     set_status("no HID service");
     g_state = FAILED;
     return;
@@ -269,14 +381,25 @@ void do_connect() {
     }
   }
   Serial.printf("[BLE] subscribed to %d report characteristic(s)\n", subs);
-  snprintf(g_status, sizeof(g_status), "CONNECTED (typing ready)");
+  if (g_pairing) {
+    // Stay on the pairing screen so the user sees the result and dismisses it
+    // themselves; no point scanning further now that we have a keyboard.
+    NimBLEDevice::getScan()->stop();
+    snprintf(g_status, sizeof(g_status), "paired! KEY to close");
+  } else {
+    snprintf(g_status, sizeof(g_status), "CONNECTED (typing ready)");
+  }
   g_state = CONNECTED;
 }
 
-// Begin a re-pairing window: tear down any active link, forget ALL bonds, and
-// restart the scan in RSSI-collection mode. Runs on the main task.
+// Open pairing mode: tear down any active link and restart the scan in
+// list-everything mode. Runs on the main task.
+//
+// Bonds are NOT wiped here (the old behaviour) — escaping the screen would then
+// leave you with no keyboard at all. The stale bond for the accessory we
+// actually pick is deleted in pair_connect_best(), just before reconnecting.
 void enter_pairing() {
-  Serial.println("[BLE] re-pairing requested: forgetting bonds, rescanning");
+  Serial.println("[BLE] pairing screen opened: scanning for accessories");
   NimBLEDevice::getScan()->stop();
 
   if (g_client) {
@@ -284,37 +407,88 @@ void enter_pairing() {
     NimBLEDevice::deleteClient(g_client);
     g_client = nullptr;
   }
-  NimBLEDevice::deleteAllBonds();  // the missing "forget" — start clean
 
-  g_have_target    = false;
-  g_pair_have_best = false;
-  g_pair_best_rssi = -128;
-  g_pair_best_name[0] = 0;
+  portENTER_CRITICAL(&g_pairmux);
+  g_pair_count = 0;
+  portEXIT_CRITICAL(&g_pairmux);
+  g_dbg_count = 0;  // log every advertiser afresh for this pairing session
+
+  g_have_target      = false;
+  g_pair_have_target = false;
   g_state       = SCANNING;
   g_pairing     = true;
-  g_pair_deadline = millis() + PAIR_WINDOW_MS;
-  set_status("pairing: bring kbd close...");
+  g_pair_settle = millis() + PAIR_SETTLE_MS;
+  set_status("searching for accessories...");
 
+  // Duplicate filtering off: repeat adverts are what keep the listed RSSI live.
+  // Stop again first — disconnecting above fires onDisconnect, which restarts
+  // the scan on the host task, and start() is a no-op while one is running (so
+  // the filter change would silently not apply).
+  NimBLEDevice::getScan()->stop();
+  NimBLEDevice::getScan()->setDuplicateFilter(false);
   NimBLEDevice::getScan()->start(0);
 }
 
-// Close the RSSI window: connect the strongest candidate, or fall back to the
-// normal first-seen auto-scan if nothing showed up.
-void finish_pairing() {
+// Close pairing mode (KEY pressed again). A link made while pairing is kept;
+// otherwise the normal first-seen auto-connect scan resumes.
+void exit_pairing() {
   g_pairing = false;
-  if (g_pair_have_best) {
-    g_target       = g_pair_best;
-    g_have_target  = true;
-    g_state        = HAVE_TARGET;
-    NimBLEDevice::getScan()->stop();
-    snprintf(g_status, sizeof(g_status), "pairing %s...", g_pair_best_name);
-    Serial.printf("[BLE] pairing target: %s (rssi=%d)\n",
-                  g_pair_best.toString().c_str(), g_pair_best_rssi);
-  } else {
-    set_status("no keyboard found; scanning");
-    Serial.println("[BLE] pairing window empty; back to normal scan");
-    // Scan is still running; onResult will resume first-seen auto-connect.
+  g_pair_have_target = false;
+  Serial.println("[BLE] pairing screen closed");
+
+  NimBLEDevice::getScan()->stop();
+  NimBLEDevice::getScan()->setDuplicateFilter(true);
+  if (g_state == CONNECTED) return;  // keep the keyboard we just bonded
+
+  g_have_target = false;
+  g_state = SCANNING;
+  set_status("scanning...");
+  NimBLEDevice::getScan()->start(0);
+}
+
+// The list has settled: bond the best candidate that hasn't already failed.
+// Proximity is the selector — there is no keyboard to pick with.
+//
+// Candidates are devices that advertised HID, plus anything held right against
+// the board (>= PAIR_NEAR_RSSI): a keyboard that reveals its HID service only
+// after connecting still needs a way in, and do_connect() blacklists whatever
+// turns out not to be a keyboard. Everything else is listed but never dialled —
+// silently connecting to a stranger's phone is not ours to do, and each attempt
+// blocks the UI for up to PAIR_CONNECT_MS.
+void pair_connect_best() {
+  int  best = -1;
+  char name[24] = "";
+  NimBLEAddress addr;
+  portENTER_CRITICAL(&g_pairmux);
+  for (int i = 0; i < g_pair_count; i++) {
+    const PairDev& c = g_pair_list[i];
+    if (c.failed || (!c.hid && c.rssi < PAIR_NEAR_RSSI)) continue;
+    if (best < 0) { best = i; continue; }
+    const PairDev& b = g_pair_list[best];
+    if (c.hid != b.hid ? c.hid : c.rssi > b.rssi) best = i;
   }
+  if (best >= 0) {
+    addr = g_pair_list[best].addr;
+    strncpy(name, g_pair_list[best].name, sizeof(name) - 1);
+    if (!name[0]) strncpy(name, "(unnamed)", sizeof(name) - 1);
+  }
+  portEXIT_CRITICAL(&g_pairmux);
+  if (best < 0) {  // every candidate failed; keep listing, re-check later
+    g_pair_settle = millis() + PAIR_SETTLE_MS;
+    return;
+  }
+
+  NimBLEDevice::getScan()->stop();
+  NimBLEDevice::deleteBond(addr);  // the "forget" — re-bond from scratch
+
+  g_pair_target      = addr;
+  g_pair_have_target = true;
+  g_target       = addr;
+  g_have_target  = true;
+  g_state        = HAVE_TARGET;
+  snprintf(g_status, sizeof(g_status), "pairing %s...", name);
+  Serial.printf("[BLE] pairing target: %s (%s)\n", name,
+                addr.toString().c_str());
 }
 }  // namespace
 
@@ -347,8 +521,13 @@ void ble_loop() {
     g_next_repeat = millis() + iv;
   }
 
-  if (g_pair_request) { g_pair_request = false; enter_pairing(); }
-  if (g_pairing && (int32_t)(millis() - g_pair_deadline) >= 0) finish_pairing();
+  if (g_pair_request) { g_pair_request = false; g_pair_stop = false; enter_pairing(); }
+  if (g_pair_stop)    { g_pair_stop = false; if (g_pairing) exit_pairing(); }
+  // Pairing mode never times out; once the list stops growing, bond the
+  // strongest candidate. Skipped while a connect is already in flight/up.
+  if (g_pairing && g_state == SCANNING && g_pair_count > 0 &&
+      (int32_t)(millis() - g_pair_settle) >= 0)
+    pair_connect_best();
   if (g_state == HAVE_TARGET) do_connect();
 }
 
@@ -364,7 +543,42 @@ void ble_kbd_inject(uint32_t k) { enqueue_key(k); }
 
 void ble_kbd_start_pairing() { g_pair_request = true; }
 
-bool ble_kbd_pairing() { return g_pairing || g_pair_request; }
+void ble_kbd_stop_pairing() { g_pair_request = false; g_pair_stop = true; }
+
+// Reports the *requested* state, not just the applied one, so the overlay opens
+// and closes on the button press instead of a loop iteration later.
+bool ble_kbd_pairing() {
+  if (g_pair_stop) return false;
+  return g_pairing || g_pair_request;
+}
+
+int ble_kbd_pair_results(BleFoundKbd* out, int max) {
+  if (!out || max <= 0) return 0;
+  PairDev tmp[PAIR_MAX];
+  portENTER_CRITICAL(&g_pairmux);
+  const int n = g_pair_count;
+  for (int i = 0; i < n; i++) tmp[i] = g_pair_list[i];
+  portEXIT_CRITICAL(&g_pairmux);
+
+  // Strongest first (insertion sort — n <= PAIR_MAX).
+  for (int i = 1; i < n; i++) {
+    const PairDev k = tmp[i];
+    int j = i - 1;
+    while (j >= 0 && tmp[j].rssi < k.rssi) { tmp[j + 1] = tmp[j]; j--; }
+    tmp[j + 1] = k;
+  }
+
+  const int cnt = n < max ? n : max;
+  for (int i = 0; i < cnt; i++) {
+    strncpy(out[i].name, tmp[i].name[0] ? tmp[i].name : "(unnamed)",
+            sizeof(out[i].name) - 1);
+    out[i].name[sizeof(out[i].name) - 1] = 0;
+    out[i].rssi    = tmp[i].rssi;
+    out[i].hid     = tmp[i].hid;
+    out[i].current = g_pair_have_target && tmp[i].addr == g_pair_target;
+  }
+  return cnt;
+}
 
 bool ble_kbd_pop(uint32_t* out) {
   bool ok = false;
