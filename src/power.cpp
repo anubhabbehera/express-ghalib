@@ -26,6 +26,7 @@
 #include "esp_sleep.h"
 #include "esp_system.h"
 
+#include "ble_kbd.h"
 #include "config.h"
 #include "files.h"
 #include "launcher.h"
@@ -392,7 +393,7 @@ void idle_cb(lv_timer_t*) {
   // finished song / dismissed alert starts a fresh timeout instead of an
   // instant sleep.
   if (music_playing() || reminders_alert_active() ||
-      reminders_snooze_pending() || files_usb_active()) {
+      reminders_snooze_pending() || files_usb_active() || ble_kbd_pairing()) {
     lv_disp_trig_activity(nullptr);
     return;
   }

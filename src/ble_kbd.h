@@ -28,10 +28,29 @@ bool ble_kbd_pop(uint32_t* key_out);
 // Inject a key into the input queue from another source (e.g. physical buttons).
 void ble_kbd_inject(uint32_t lvgl_key);
 
-// Enter re-pairing mode: disconnect + forget all bonds, then scan for a short
-// window and bond the STRONGEST-RSSI keyboard (bring the new one close). Safe to
-// call from the main task (e.g. a long-press handler); the work runs in ble_loop.
+// One accessory seen by the pairing scan (UI snapshot).
+struct BleFoundKbd {
+  char name[24];
+  int  rssi;
+  bool hid;       // advertised as a HID device (tried first)
+  bool current;   // the one we are bonding to / bonded to
+};
+
+// Open pairing mode: drop the active link and rescan, listing every HID
+// accessory in range. There is NO timeout — the mode stays open until
+// ble_kbd_stop_pairing(), so the list keeps filling while the user watches.
+// Once the scan settles the strongest accessory is bonded automatically (with
+// no working keyboard, proximity is the only selector we have). Safe to call
+// from the main task (e.g. a long-press handler); the work runs in ble_loop.
 void ble_kbd_start_pairing();
 
-// True while a re-pairing window is in progress (for UI + re-entrancy guards).
+// Leave pairing mode (KEY pressed again). Any link made while pairing is kept;
+// otherwise the normal first-seen auto-connect scan resumes.
+void ble_kbd_stop_pairing();
+
+// True while pairing mode is open (for the overlay + re-entrancy guards).
 bool ble_kbd_pairing();
+
+// Snapshot the accessories found so far, strongest first. Returns how many
+// entries were written (at most `max`).
+int ble_kbd_pair_results(BleFoundKbd* out, int max);

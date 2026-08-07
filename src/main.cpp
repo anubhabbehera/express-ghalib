@@ -307,23 +307,28 @@ static lv_obj_t* g_ble_label = nullptr;
 
 // ---------------------------------------------------------------------------
 // BLE pairing overlay — a modal on lv_layer_top() that floats above whatever
-// screen is active while a long-press re-pair runs. Pure visual feedback (no key
-// input), so it works even when there is no functioning keyboard to navigate.
+// screen is active while pairing mode is open. Pure visual feedback (no key
+// input), so it works even when there is no functioning keyboard to navigate:
+// it lists every accessory the scan finds and stays up until the KEY button is
+// pressed again (buttons.cpp calls ble_kbd_stop_pairing()).
 // ---------------------------------------------------------------------------
-static lv_obj_t* g_pair_box    = nullptr;
-static lv_obj_t* g_pair_label  = nullptr;
-static int       g_pair_linger = 0;   // 200ms ticks to linger after pairing ends
+constexpr int PAIR_SHOW_MAX = 6;      // accessories listed in the overlay
+
+static lv_obj_t* g_pair_box   = nullptr;
+static lv_obj_t* g_pair_label = nullptr;
+static String    g_pair_shown;        // last rendered body; repaint only on change
 
 static void pairing_overlay_show() {
   if (g_pair_box) return;
   g_pair_box = lv_obj_create(lv_layer_top());
-  lv_obj_set_size(g_pair_box, ST7305_W - 60, 96);
+  lv_obj_set_size(g_pair_box, ST7305_W - 40, 232);
   lv_obj_center(g_pair_box);
   lv_obj_set_style_bg_color(g_pair_box, lv_color_white(), 0);
   lv_obj_set_style_bg_opa(g_pair_box, LV_OPA_COVER, 0);
   lv_obj_set_style_border_color(g_pair_box, lv_color_black(), 0);
   lv_obj_set_style_border_width(g_pair_box, 2, 0);
   lv_obj_set_style_radius(g_pair_box, 6, 0);
+  lv_obj_set_style_pad_all(g_pair_box, 8, 0);
   lv_obj_clear_flag(g_pair_box, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* hdr = lv_label_create(g_pair_box);
@@ -332,28 +337,54 @@ static void pairing_overlay_show() {
   lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 0);
 
   g_pair_label = lv_label_create(g_pair_box);
-  lv_obj_set_width(g_pair_label, ST7305_W - 96);
+  lv_obj_set_width(g_pair_label, ST7305_W - 60);
   lv_label_set_long_mode(g_pair_label, LV_LABEL_LONG_WRAP);
-  lv_obj_set_style_text_align(g_pair_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_text(g_pair_label, "");
-  lv_obj_align(g_pair_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_align(g_pair_label, LV_ALIGN_TOP_LEFT, 0, 24);
+
+  lv_obj_t* ftr = lv_label_create(g_pair_box);
+  lv_label_set_text(ftr, "KEY to close");
+  lv_obj_align(ftr, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+  g_pair_shown = "";
 }
 
 static void pairing_overlay_hide() {
   if (!g_pair_box) return;
   lv_obj_del(g_pair_box);
   g_pair_box = g_pair_label = nullptr;
+  g_pair_shown = "";
 }
 
 static void pairing_timer_cb(lv_timer_t*) {
-  if (ble_kbd_pairing()) {                 // window open (or connect pending)
-    pairing_overlay_show();
-    lv_label_set_text(g_pair_label, ble_status_text().c_str());
-    g_pair_linger = 8;                      // ~1.6 s linger once it ends
-  } else if (g_pair_box) {                  // finished: show outcome, then fade
-    lv_label_set_text(g_pair_label, ble_status_text().c_str());
-    if (g_pair_linger > 0) g_pair_linger--;
-    else pairing_overlay_hide();
+  if (!ble_kbd_pairing()) { pairing_overlay_hide(); return; }
+  pairing_overlay_show();
+
+  // Status line only — ble_status_text() also carries the last decoded key,
+  // which is noise on this screen.
+  String body = ble_status_text();
+  const int nl = body.indexOf('\n');
+  if (nl >= 0) body = body.substring(0, nl);
+
+  BleFoundKbd found[PAIR_SHOW_MAX];
+  const int n = ble_kbd_pair_results(found, PAIR_SHOW_MAX);
+  if (n == 0) {
+    body += "\n\n(nothing found yet)\nput the keyboard in\npairing mode and hold\nit against the board";
+  } else {
+    for (int i = 0; i < n; i++) {
+      body += "\n";
+      body += found[i].current ? ">" : " ";   // the one being bonded
+      body += found[i].hid ? "* " : "  ";     // * = advertises HID
+      body += found[i].name;
+      body += "  ";
+      body += String(found[i].rssi);
+      body += "dBm";
+    }
+  }
+
+  if (body != g_pair_shown) {   // repainting the panel is slow; only on change
+    g_pair_shown = body;
+    lv_label_set_text(g_pair_label, body.c_str());
   }
 }
 
