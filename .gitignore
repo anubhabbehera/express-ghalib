@@ -5,5 +5,8 @@
 *.elf
 __pycache__/
 
+# Local agent/editor config (personal prefs + machine-specific paths)
+.claude/
+
 # Adversarial perf review findings (local, not tracked)
 perf-review/
