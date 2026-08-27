@@ -110,6 +110,22 @@ The decoded backtrace names the crashed task, the panic reason, and the full cal
 stack with source lines — this is how the USB-MSC eject watchdog crash was
 diagnosed (see [performance.md](performance.md) and `files.cpp`).
 
+> **A coredump is a RAM snapshot, so treat it as sensitive.** Whatever the device
+> was holding in memory is in there — most notably the Wi-Fi password, which
+> `config_get_wifi()` reads out of NVS at boot. Don't attach a raw `coredump.bin`
+> to an issue or paste it into a chat; share the decoded backtrace instead.
+> Erase the partition once you're done with it:
+>
+> ```bash
+> python3 -m esptool --chip esp32s3 --port /dev/cu.usbmodem21201 \
+>   --before no_reset --after hard_reset erase_region 0x800000 0x10000
+> ```
+>
+> The same applies to the whole chip: flash is not encrypted, so anyone who can
+> plug the board into a computer can read NVS — the Wi-Fi PSK and the BLE bond
+> keys included. Enable flash encryption and secure boot if the device will hold
+> credentials you care about.
+
 ## Handy tools (`tools/`)
 
 | Tool | Purpose |

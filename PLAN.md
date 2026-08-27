@@ -102,12 +102,16 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 ## 4. Milestones
 
 ### M0 — Toolchain + "hello pixels" (de-risk the display)
+Status: **Done** — [`42036a9`](https://github.com/anubhabbehera/express-ghalib/commit/42036a9) ([PR #1](https://github.com/anubhabbehera/express-ghalib/pull/1)).
+
 - Arduino-ESP32 core installed, board flashes over USB-C.
 - Bring up Waveshare RLCD demo → confirm 300×400 output, refresh behavior, grayscale depth.
 - Wrap the panel in an LVGL display driver; render a static test screen.
 - **Exit:** text renders crisply; we know the real color depth + redraw cost.
 
-### M0.5 — Sensor + Wi-Fi mock screen (de-risk I2C + Wi-Fi) ✅
+### M0.5 — Sensor + Wi-Fi mock screen (de-risk I2C + Wi-Fi)
+Status: **Done** — [`ebe163d`](https://github.com/anubhabbehera/express-ghalib/commit/ebe163d) ([PR #1](https://github.com/anubhabbehera/express-ghalib/pull/1)).
+
 - SHTC3 temp/humidity over I2C (SDA=13, SCL=14, addr 0x70); live on-panel.
 - Async Wi-Fi SSID scan → on-screen list with RSSI, re-scans every ~15s.
 - **Exit:** panel shows live temp/humidity that reacts to breath, plus nearby SSIDs.
@@ -117,38 +121,44 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
   I2C bus map: 0x18 ES8311, 0x40 ES7210, 0x51 PCF85063 RTC, 0x70 SHTC3.
 
 ### M1 — Input layer + launcher shell (de-risk BLE keyboard — highest risk)
-- ✅ NimBLE HOGP host: scan, connect, bond (encrypted, persisted), auto-reconnect.
-- ✅ HID report → LVGL key event bridge; on-screen "typing test" textarea works.
+Status: **Done** — [`5d8f62b`](https://github.com/anubhabbehera/express-ghalib/commit/5d8f62b), [`f02b21a`](https://github.com/anubhabbehera/express-ghalib/commit/f02b21a), [`c78dfa7`](https://github.com/anubhabbehera/express-ghalib/commit/c78dfa7), [`76e877e`](https://github.com/anubhabbehera/express-ghalib/commit/76e877e) ([PR #2](https://github.com/anubhabbehera/express-ghalib/pull/2)).
+
+- Done: NimBLE HOGP host: scan, connect, bond (encrypted, persisted), auto-reconnect.
+- Done: HID report → LVGL key event bridge; on-screen "typing test" textarea works.
   - **8BitDo quirk:** ignores Boot Protocol; only sends a 16-byte **NKRO bitmap**
     report (byte0 = modifiers; byte b≥1, bit p → HID usage (b-1)*8 + p). Decoded
     in `ble_kbd.cpp` incl. shift. Verified: typed text + `!`(shift) + Enter.
-- ✅ KEY/BOOT buttons → Back/Home. KEY (GPIO18) injects Esc (Back); BOOT (GPIO0)
+- Done: KEY/BOOT buttons → Back/Home. KEY (GPIO18) injects Esc (Back); BOOT (GPIO0)
   jumps to the launcher (Home). Active-low, debounced.
-- ✅ Home-screen app launcher: icon-tile grid (Notes/Calendar/Reminders/Music/
+- Done: Home-screen app launcher: icon-tile grid (Notes/Calendar/Reminders/Music/
   Settings), arrow-key nav with inverted focus, Enter opens stub app, Esc = back.
   Perf: ST7305 SPI 2→10 MHz (Waveshare-proven) fixed typing lag; font Montserrat 18.
-- **✅ M1 COMPLETE** — pair/bond a BLE keyboard, type into a field, navigate the
+- **M1 complete** — pair/bond a BLE keyboard, type into a field, navigate the
   launcher with arrows/enter/esc, and Back/Home via physical buttons. All verified.
 - **Exit:** can pair a real BLE keyboard and type into a field; navigate the launcher with arrows/enter/esc. *If BLE host proves unstable, fall back plan: USB-OTG wired keyboard or a matrix/UART keyboard on the header — decide here.*
 
 ### M2 — Notes + templates
-- ✅ Note list, create/edit/delete, LittleFS persistence, autosave (3s + on exit).
+Status: **Done** — [`f5d98a8`](https://github.com/anubhabbehera/express-ghalib/commit/f5d98a8), [`5a45d8f`](https://github.com/anubhabbehera/express-ghalib/commit/5a45d8f) ([PR #3](https://github.com/anubhabbehera/express-ghalib/pull/3)).
+
+- Done: Note list, create/edit/delete, LittleFS persistence, autosave (3s + on exit).
   One file per note at `/notes/<id>.txt`; first line = title. Verified: survives reboot.
-- ✅ Template picker (Blank / Journal / Daily Log) on "New note"; templates seed
+- Done: Template picker (Blank / Journal / Daily Log) on "New note"; templates seed
   the editor. Daily Log titles by date via the PCF85063 RTC ({date} -> MM-DD-YY).
   Existing notes open with no template (blank failover).
-- ✅ Text editor: LVGL textarea, steady (non-blinking) cursor for the reflective panel.
-- ✅ **Exit met:** create a note from a template, reopen after reboot — verified.
-- **✅ M2 COMPLETE.** (RTC read brought forward for dates; full RTC set/NTP is M3.)
+- Done: Text editor: LVGL textarea, steady (non-blinking) cursor for the reflective panel.
+- Done: **Exit met:** create a note from a template, reopen after reboot — verified.
+- **M2 complete.** (RTC read brought forward for dates; full RTC set/NTP is M3.)
 - Mono-UI lesson: `lv_list` renders invisibly on the 1-bit panel — build rows by
   hand with explicit black text + inverted-focus highlight (see notes.cpp make_row).
 
 ### M3 — Calendar (+ Wi-Fi/NTP time)
-- ✅ PCF85063 driver: read/set time (rtc.cpp). (Alarm + IRQ deferred to M3.5.)
-- ⬜ Agenda view: chronologically-sorted event list; add/edit/delete local events.
+Status: **Done** — [`cc42798`](https://github.com/anubhabbehera/express-ghalib/commit/cc42798), [`aad67af`](https://github.com/anubhabbehera/express-ghalib/commit/aad67af) ([PR #4](https://github.com/anubhabbehera/express-ghalib/pull/4)).
+
+- Done: PCF85063 driver: read/set time (rtc.cpp). (Alarm + IRQ deferred to M3.5.)
+- Done: agenda view — chronologically-sorted event list; add/edit/delete local events.
   One file per event at `/events/<id>.txt` (line 1 = `YYYY-MM-DD HH:MM`, line 2 = title),
   edited via a two-line textarea (same pattern as the Notes editor).
-- ✅ **Wi-Fi NTP sync + Settings screen** (user priority): Settings tile → Wi-Fi scan →
+- Done: **Wi-Fi NTP sync + Settings screen** (user priority): Settings tile → Wi-Fi scan →
   pick SSID → password (Enter submits) → connect + NTP → set RTC (UTC); creds saved
   to NVS, auto-sync at boot; status-bar Wi-Fi icon. Wi-Fi connects only to sync then
   disconnects (RTC is timekeeper). Config via config.{h,cpp} (Preferences).
@@ -157,22 +167,35 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 - **Exit:** create an event from the keyboard, reopen after reboot — it persists.
 
 ### M3.5 — Reminders (deferred out of M3)
-- ⬜ PCF85063 alarm + IRQ handling.
-- ⬜ Reminder scheduler: arm the RTC alarm for the next event's reminder → wake +
+Status: **Done** — [`8e15ef5`](https://github.com/anubhabbehera/express-ghalib/commit/8e15ef5), [`814c58d`](https://github.com/anubhabbehera/express-ghalib/commit/814c58d), [`c706fdd`](https://github.com/anubhabbehera/express-ghalib/commit/c706fdd) ([PR #5](https://github.com/anubhabbehera/express-ghalib/pull/5)). RTC-alarm hardware path dropped (INT not routed).
+
+- Not done (superseded): PCF85063 alarm + IRQ. The INT line is not routed on this
+  board (found in M7), so reminders run off a software scheduler plus an ESP32
+  timer wake instead.
+- Done: reminder scheduler — arms the next event's reminder → wake +
   on-screen alert + ES8311 beep. (First use of the audio codec — a preview of M4.)
 - **Exit:** an event set 2 min out fires a visible + audible reminder.
 
 ### M4 — Music player
-- ES8311 I2S init; `ESP32-audioI2S` playback from SD.
+Status: **Done** — [`3dabea3`](https://github.com/anubhabbehera/express-ghalib/commit/3dabea3), [`27eeae7`](https://github.com/anubhabbehera/express-ghalib/commit/27eeae7), [`9d987cb`](https://github.com/anubhabbehera/express-ghalib/commit/9d987cb) ([PR #6](https://github.com/anubhabbehera/express-ghalib/pull/6)).
+
+- ES8311 I2S init; playback from SD. (Shipped with `arduino-libhelix` for MP3
+  decode into a hand-rolled I2S writer, not `ESP32-audioI2S`.)
 - Browse `/music`, play/pause/next/prev/seek, volume; now-playing screen.
 - Verify playback stays glitch-free while UI redraws (audio on core 1, UI on core 0).
 - **Exit:** play an MP3 off the SD card, control it from the keyboard, no dropouts.
 
 ### M5 — Polish
-- Status bar (clock, battery, optional temp/humidity from SHTC3).
-- Power management: PWR-button sleep, screen-idle, battery gauge, deep-sleep wake on RTC/KEY.
-- Settings app (Wi-Fi, keyboard re-pair, time, brightness N/A → contrast if supported).
-- Persistence hardening, backups to SD.
+Status: **Done** — [`ee7f5ea`](https://github.com/anubhabbehera/express-ghalib/commit/ee7f5ea), [`d30383e`](https://github.com/anubhabbehera/express-ghalib/commit/d30383e) ([PR #7](https://github.com/anubhabbehera/express-ghalib/pull/7)). Scope drifted: became perf + status bar; power management moved to M7, Settings landed in M3.
+
+- Done: status bar (clock, battery; SHTC3 temp/humidity not surfaced) — [`d30383e`](https://github.com/anubhabbehera/express-ghalib/commit/d30383e).
+- Done, in M7: power management — idle timeout, standby dashboard, deep sleep,
+  battery gauge, KEY wake — [`20f314f`](https://github.com/anubhabbehera/express-ghalib/commit/20f314f). (PWR-button sleep and RTC-IRQ wake
+  are not available: PWR is hard-wired, PCF85063 INT is not routed.)
+- Done, in M3 and M3.5: Settings app — Wi-Fi, time/timezone — [`cc42798`](https://github.com/anubhabbehera/express-ghalib/commit/cc42798);
+  keyboard re-pair — [`6d36ac4`](https://github.com/anubhabbehera/express-ghalib/commit/6d36ac4). Contrast: not supported by the panel.
+- Done, in M9: persistence hardening + SD backups for notes and journal —
+  [`645c288`](https://github.com/anubhabbehera/express-ghalib/commit/645c288), [`80c6fea`](https://github.com/anubhabbehera/express-ghalib/commit/80c6fea).
 
 ## 5. Top risks & mitigations
 | Risk | Likelihood | Mitigation |
@@ -187,15 +210,21 @@ Reminders are derived from events with `remindBeforeMin`; the RTC alarm is set t
 1. ~~Do you already own a specific **BLE** keyboard?~~ **Resolved: 8BitDo Retro Mechanical
    Keyboard — confirmed BLE/HOGP.** Use its Bluetooth mode switch ("B"); expect bonding.
 2. ~~Confirm the RLCD's actual **color depth**~~ — **Resolved: ST7305 is 1-bit monochrome.** LVGL uses `LV_COLOR_DEPTH 1`; design a pure black/white theme. (Verify in M0 whether the panel exposes any grayscale via ST7305 4-level mode.)
-3. Music format scope — MP3 only, or WAV/AAC too?
-4. Is Wi-Fi in scope at all for v1 (NTP only), or fully offline?
+3. ~~Music format scope — MP3 only, or WAV/AAC too?~~ **Resolved: MP3 (Helix) + 16-bit
+   PCM WAV.** AAC out of scope — [`27eeae7`](https://github.com/anubhabbehera/express-ghalib/commit/27eeae7), [`9d987cb`](https://github.com/anubhabbehera/express-ghalib/commit/9d987cb).
+4. ~~Is Wi-Fi in scope at all for v1 (NTP only), or fully offline?~~ **Resolved: NTP only.**
+   Wi-Fi connects to sync the RTC, then disconnects; everything else is offline — [`cc42798`](https://github.com/anubhabbehera/express-ghalib/commit/cc42798).
 
 ## 7. Status + forward roadmap (M6+)
 
-> Status as of 2026-07-27: **M0–M6 complete.** The milestone list above drifted:
-> M5 became *perf + polish* (LVGL direct_mode 6.4× redraw, status bar w/ clock +
-> battery + timezone), M6 was a UX pass (Notes editor, calendar month grid,
-> reminders UX, music UX — branch `m6-ux`), and power management moved to M7.
+> Status as of 2026-08-27: **M0–M11 done; M12 is the only open milestone.**
+> The milestone list above drifted: M5 became *perf + polish* (LVGL direct_mode
+> 6.4× redraw, status bar w/ clock + battery + timezone), M6 was a UX pass
+> (Notes editor, calendar month grid, reminders UX, music UX — branch `m6-ux`),
+> and power management moved to M7. Ten apps ship: Notes, Calendar, Reminders,
+> Tasks, Journal, Music, Files, Lexicon, Reader, Settings.
+> Post-M11 work (fonts, icons, perf, docs, BLE pairing) is listed in
+> [Post-M11 work](#post-m11-work-not-a-milestone) below.
 
 The roadmap below is informed by [PocketMage PDA](https://github.com/TailsmanDesign/PocketMage_PDA)
 (Apache-2.0 — code/ideas portable), a shipped ESP32-S3 E-Ink PDA with a very
@@ -215,23 +244,25 @@ scripting), COMM (ESP-NOW mesh chat).
 - **Backlog:** COMM ESP-NOW chat (needs a second unit), Wi-Fi note/calendar
   sync, custom abbreviations / text expansion.
 
-### M7 — Power / deep-sleep (+ PocketMage sleep UX) ✅ (branch m7-power)
-- ✅ Idle timeout (Settings row: Off/1/2/5/10 m, default 2 m) → **standby
+### M7 — Power / deep-sleep (+ PocketMage sleep UX) (branch m7-power)
+Status: **Done** — [`20f314f`](https://github.com/anubhabbehera/express-ghalib/commit/20f314f) ([PR #9](https://github.com/anubhabbehera/express-ghalib/pull/9)). Standby-dashboard rework later in [`1cf7d4e`](https://github.com/anubhabbehera/express-ghalib/commit/1cf7d4e) ([PR #13](https://github.com/anubhabbehera/express-ghalib/pull/13)).
+
+- Done: Idle timeout (Settings row: Off/1/2/5/10 m, default 2 m) → **standby
   dashboard** (48pt clock, date, battery, today's agenda) → deep sleep. Panel
   keeps the image (ST7305 LPM 0x39); a ~60 s timer wake redraws the clock via a
   minimal boot (display+FS+RTC, no BLE/audio) and re-sleeps — verified via the
   new `/pwr.log` boot journal (r8/w4 dash-tick entries).
-- ✅ **On external power → awake desk clock** instead of deep sleep (any key
+- Done: **On external power → awake desk clock** instead of deep sleep (any key
   returns; unplug drops to real sleep on the next 30 s tick). USB-host detect
   via `HWCDC::isPlugged()` (battery-voltage alone can't detect a charger with a
   part-full cell). This also keeps USB alive for development flashing.
-- ✅ KEY (GPIO18, EXT1 any-low) wakes to a full boot; **BOOT is deliberately
+- Done: KEY (GPIO18, EXT1 any-low) wakes to a full boot; **BOOT is deliberately
   not a wake pin** (GPIO0 strap → download mode if still held at reset).
-- ✅ Reminders across sleep: wake timer arms for min(60 s, next event); on a
+- Done: Reminders across sleep: wake timer arms for min(60 s, next event); on a
   due wake the full boot replays the missed window through the scheduler
   (baseline seeded from the pre-sleep timestamp), so the alert + beep fire.
   Deep sleep is blocked while a snooze is pending (snoozes are RAM-only).
-- ✅ Critical battery (≤3%): dashboard says "charge me", minute tick disabled.
+- Done: Critical battery (≤3%): dashboard says "charge me", minute tick disabled.
 - Findings: PCF85063 INT is **not routed** on this board (ESP32 timer wake
   stands in; RTC re-read every wake so drift never accumulates). RTC slow
   clock runs ~15% fast (60 s ticks arrive at ~49 s — harmless). Spurious EXT1
@@ -242,7 +273,9 @@ scripting), COMM (ESP-NOW mesh chat).
   for flashing).
 - Deferred: single-key wake into a specific app; RTC slow-clock calibration.
 
-### M8 — Tasks app + calendar power-ups ✅ (branch m8-apps; recur.cpp host-tested, on-device play-test pending)
+### M8 — Tasks app + calendar power-ups (branch m8-apps; recur.cpp host-tested, on-device play-test pending)
+Status: **Done** — [`5fa75ff`](https://github.com/anubhabbehera/express-ghalib/commit/5fa75ff), [`c06d1a4`](https://github.com/anubhabbehera/express-ghalib/commit/c06d1a4) ([PR #10](https://github.com/anubhabbehera/express-ghalib/pull/10)).
+
 - **Tasks** (`tasks.cpp`): title + optional due date, done/undone toggle,
   auto-sort by due date, 0–9 quick-toggle, `/littlefs/tasks.json`. Due-dated
   tasks surface in the calendar day agenda and (opt-in) arm reminders.
@@ -251,13 +284,15 @@ scripting), COMM (ESP-NOW mesh chat).
   expanded into month-grid dots + agenda + reminder scheduler.
 - Type-to-jump in month view (digits → go to date).
 
-### M9 — Journal + Notes upgrades ✅ (branch m9-journal; on-device play-test pending)
-- ✅ **Journal** (`journal.cpp`): date-keyed `/journal/YYYYMMDD.txt` — Today
+### M9 — Journal + Notes upgrades (branch m9-journal; on-device play-test pending)
+Status: **Done** — [`645c288`](https://github.com/anubhabbehera/express-ghalib/commit/645c288), [`80c6fea`](https://github.com/anubhabbehera/express-ghalib/commit/80c6fea), fixes [`5ee8a7c`](https://github.com/anubhabbehera/express-ghalib/commit/5ee8a7c), [`df25369`](https://github.com/anubhabbehera/express-ghalib/commit/df25369) ([PR #10](https://github.com/anubhabbehera/express-ghalib/pull/10)).
+
+- Done: **Journal** (`journal.cpp`): date-keyed `/journal/YYYYMMDD.txt` — Today
   row, `T` shortcut, jump box (`jan 1` / `20260101` / `t`); entries seeded
   from the Journal template (untouched/blank entries dropped on close);
   streak + "days written" counter; `A` archives all entries to SD
   `/export/journal/`.
-- ✅ **Notes**: `/` search across titles+bodies (Enter filters, Esc clears),
+- Done: **Notes**: `/` search across titles+bodies (Enter filters, Esc clears),
   list sorted by last-modified, live word count in the editor bar, `X`/`I`
   backup/restore all notes to/from SD `/export/notes/` (file-level, by id).
 - Infra this needed: system clock now mirrors the RTC (settimeofday at boot +
@@ -271,12 +306,14 @@ scripting), COMM (ESP-NOW mesh chat).
   OS flag clear — clock reads fine but never ticks; probably a hard reset
   mid-I2C poll). `rtc_init` now logs Control_1/2 and clears STOP every boot.
 
-### M10 — Files + USB transfer ✅ (branch m10-files; on-device play-test pending)
-- ✅ **FileWiz** (`files.cpp`, 8th launcher tile — grid now full at 4×2):
+### M10 — Files + USB transfer (branch m10-files; on-device play-test pending)
+Status: **Done** — [`f144c6a`](https://github.com/anubhabbehera/express-ghalib/commit/f144c6a), [`a51d6f9`](https://github.com/anubhabbehera/express-ghalib/commit/a51d6f9) ([PR #11](https://github.com/anubhabbehera/express-ghalib/pull/11)); eject crash fixed in [`55d981f`](https://github.com/anubhabbehera/express-ghalib/commit/55d981f) ([PR #14](https://github.com/anubhabbehera/express-ghalib/pull/14)).
+
+- Done: **FileWiz** (`files.cpp`, 8th launcher tile — grid now full at 4×2):
   root screen (Flash/SD volumes + 0–9 recents from `/recents.txt`), directory
   browser (dirs first, sizes, dotfiles hidden), text editor (.txt/.md/.log/
   .csv/.json, 32 K cap, save on exit), `R`=rename, Del=delete.
-- ✅ **USB transfer** (row on the Files root, not a 9th tile): SD VFS
+- Done: **USB transfer** (row on the Files root, not a 9th tile): SD VFS
   unmounted, card driven raw (IDF sdmmc) and exposed as TinyUSB **MSC**;
   Esc/Home ejects + remounts; blocks idle-sleep while exposed.
 - Build now **USB-OTG** (`ARDUINO_USB_MODE=0`): Serial = TinyUSB CDC (new
@@ -288,22 +325,41 @@ scripting), COMM (ESP-NOW mesh chat).
   at app entry). All HW-verified except the actual PC drive mount (keyboard
   play-test).
 
-### M11 — Lexicon + Reader ✅ (branch m11-reader, stacked on m10-files; play-test pending)
-- ✅ **Lexicon** (`lexicon.cpp`): offline dictionary from SD
+### M11 — Lexicon + Reader (branch m11-reader, stacked on m10-files; play-test pending)
+Status: **Done** — [`ef2ea90`](https://github.com/anubhabbehera/express-ghalib/commit/ef2ea90) ([PR #12](https://github.com/anubhabbehera/express-ghalib/pull/12)).
+
+- Done: **Lexicon** (`lexicon.cpp`): offline dictionary from SD
   `/lexicon/dict.txt` + `dict.idx` (two-letter-prefix buckets, RAM-cached
   index, buffered sorted scan). Enter=lookup, **Up/Down** cycle senses (not
   `<`/`>` — they'd type into the input), nearby-word suggestions on a miss.
   `tools/build_lexicon.py` builds the files from WordNet 3.1 (16.1 MB, 207k
   senses); lookup algorithm host-verified against the generated data.
-- ✅ **Reader** (`reader.cpp`): paginated .txt/.md from SD `/books`;
+- Done: **Reader** (`reader.cpp`): paginated .txt/.md from SD `/books`;
   byte-window pages snapped to whitespace, one static redraw per page;
   exact Prev via page-start history; per-book resume (`/reader_pos.txt`);
   S key cycles the shared S/M/L size pref.
 - Launcher reflowed for 10 apps: 88×76 tiles, 3 cols × 4 rows, 14 pt labels.
 
 ### M12 — Home command bar + consistency pass
+Status: **Not done** — no commits yet. Last open item on the roadmap.
+
 - Command bar under the launcher grid: type to filter/launch apps, open a note
   by name, quick-add reminder (`rem 15m tea`), `roll d20`, `timeset`/`dateset`,
   inline calculator (`= 12*7`).
 - Global keystroke consistency audit + `KEYS.md` manual + on-device `?` help
   overlay per app.
+
+### Post-M11 work (not a milestone)
+- Done: **Pixel Operator system font** + 2D launcher arrow-nav + standby-dashboard
+  rework + pixel-art Great Wave on the dashboard — [`1f246d8`](https://github.com/anubhabbehera/express-ghalib/commit/1f246d8), [`c4e4408`](https://github.com/anubhabbehera/express-ghalib/commit/c4e4408), [`44f5fba`](https://github.com/anubhabbehera/express-ghalib/commit/44f5fba), [`1cf7d4e`](https://github.com/anubhabbehera/express-ghalib/commit/1cf7d4e), [`208b1a9`](https://github.com/anubhabbehera/express-ghalib/commit/208b1a9) ([PR #13](https://github.com/anubhabbehera/express-ghalib/pull/13)).
+- Done: **custom pixel-art launcher icons** replacing the FontAwesome tile glyphs —
+  [`2b02343`](https://github.com/anubhabbehera/express-ghalib/commit/2b02343) ([PR #15](https://github.com/anubhabbehera/express-ghalib/pull/15)).
+- Done: **perf review + 9 fixes** (change-detected status bar and music poll, tighter
+  input latency, skipped unchanged autosaves, less redundant SD/LittleFS I/O in the
+  music browser, reader and notes search) — [`7e267ab`](https://github.com/anubhabbehera/express-ghalib/commit/7e267ab), [`9c9b283`](https://github.com/anubhabbehera/express-ghalib/commit/9c9b283), [`8686521`](https://github.com/anubhabbehera/express-ghalib/commit/8686521) ([PR #16](https://github.com/anubhabbehera/express-ghalib/pull/16)).
+  All HW-verified.
+- Done: **README + `docs/`** (architecture, hardware, display pipeline, build/flash/debug,
+  performance) — [`0e9bfe6`](https://github.com/anubhabbehera/express-ghalib/commit/0e9bfe6) ([PR #17](https://github.com/anubhabbehera/express-ghalib/pull/17)).
+- Done: **BLE pairing screen fix** — lists nearby accessories, no scan timeout —
+  [`8ea6493`](https://github.com/anubhabbehera/express-ghalib/commit/8ea6493) ([PR #18](https://github.com/anubhabbehera/express-ghalib/pull/18)).
+- Not done: `KEYS.md` keystroke manual and the on-device `?` help overlay (part of M12).

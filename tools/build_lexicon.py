@@ -15,6 +15,7 @@ must match bucket() below — change both or neither.
 Usage: python3 tools/build_lexicon.py [--out DIR]   (default: ./lexicon_out)
 """
 import argparse
+import hashlib
 import io
 import os
 import shutil
@@ -24,6 +25,29 @@ import tarfile
 import urllib.request
 
 URL = "https://wordnetcode.princeton.edu/wn3.1.dict.tar.gz"
+# Checksum of the archive this script was built and verified against. HTTPS
+# authenticates the host, not the bytes it serves over time — pinning the digest
+# means a swapped or truncated archive fails loudly instead of silently building
+# a different dictionary.
+SHA256 = "3f7d8be8ef6ecc7167d39b10d66954ec734280b5bdcd57f7d9eafe429d11c22a"
+
+
+def verify(path, expected, allow_mismatch=False):
+    """Abort unless `path` hashes to `expected`."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    got = h.hexdigest()
+    if got == expected:
+        return
+    msg = (f"checksum mismatch for {path}\n"
+           f"  expected {expected}\n  got      {got}")
+    if allow_mismatch:
+        print(f"WARNING: {msg}")
+        return
+    sys.exit(f"{msg}\nDelete the file to re-download, or pass "
+             f"--allow-sha-mismatch if you trust this copy.")
 CACHE = os.path.expanduser("~/.cache/express-ghalib/wn3.1.dict.tar.gz")
 POS_FILES = {  # tar member -> part-of-speech tag shown in definitions
     "dict/data.noun": "n",
@@ -80,6 +104,9 @@ def parse_data(f, tag: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="lexicon_out")
+    ap.add_argument("--allow-sha-mismatch", action="store_true",
+                    help="proceed even if the tarball checksum differs "
+                         "(use when Princeton republishes the archive)")
     args = ap.parse_args()
 
     if not os.path.exists(CACHE):
@@ -91,7 +118,10 @@ def main():
                            check=True)
         else:
             urllib.request.urlretrieve(URL, CACHE + ".part")
+        verify(CACHE + ".part", SHA256, args.allow_sha_mismatch)
         os.rename(CACHE + ".part", CACHE)
+    else:
+        verify(CACHE, SHA256, args.allow_sha_mismatch)
     print(f"using {CACHE}")
 
     entries = set()
