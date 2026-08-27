@@ -37,6 +37,10 @@ wifi_secrets.h
 *.key
 id_rsa*
 
+# --- documentation site (site/, built by `npm run site:build`) ---
+node_modules/
+_site/
+
 # --- local notes / captures ---
 perf-review/
 *.log
