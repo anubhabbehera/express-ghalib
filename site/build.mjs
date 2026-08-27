@@ -119,11 +119,13 @@ marked.setOptions({ gfm: true, breaks: false, mangle: false, headerIds: false })
 function renderMarkdown(md, page) {
   let html = marked.parse(substitute(md));
   const outline = [];
+  const ids = new Set();
 
   // Heading ids + a permalink target for the sidebar.
   html = html.replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level, inner) => {
     const id = slug(inner);
     const depth = Number(level);
+    ids.add(id);
     if (depth === 2 || depth === 3) outline.push({ id, depth, text: stripTags(inner) });
     return `<h${level} id="${id}"><a class="anchor" href="#${id}" aria-label="Link to this section">#</a>${inner}</h${level}>`;
   });
@@ -141,32 +143,18 @@ function renderMarkdown(md, page) {
     return '';
   });
 
-  return { html, outline, title };
+  return { html, outline, title, ids };
 }
 
 /**
- * Pulls the app roster out of README section 5. Each "### Name" subsection
- * contributes its first paragraph, which the launcher demo shows when a tile
- * is opened — so the demo text and the README can never drift apart.
+ * Pulls the app roster out of README section 5, in the order the launcher
+ * shows them. A tile links to its app's section on this page, so the launcher
+ * and the README can never drift apart.
  */
 function extractApps(readme) {
   const section = readme.split(/^## 5\. Apps$/m)[1] ?? '';
   const body = section.split(/^## /m)[0];
-  const apps = [];
-  const re = /^### (.+)$/gm;
-  let match;
-  const marks = [];
-  while ((match = re.exec(body)) !== null) marks.push({ name: match[1].trim(), start: match.index + match[0].length });
-  marks.forEach((mark, i) => {
-    const end = i + 1 < marks.length ? body.lastIndexOf('### ', marks[i + 1].start) : body.length;
-    const chunk = body.slice(mark.start, end).trim();
-    const paragraph = chunk.split(/\n\s*\n/).find((p) => p && !p.startsWith('-') && !p.startsWith('|') && !p.startsWith('```'));
-    apps.push({
-      name: mark.name,
-      blurb: substitute(stripTags(marked.parseInline(paragraph ?? ''))).replace(/\s+/g, ' ').trim(),
-    });
-  });
-  return apps;
+  return [...body.matchAll(/^### (.+)$/gm)].map((m) => m[1].trim());
 }
 
 // --- page shell ------------------------------------------------------------
@@ -198,25 +186,31 @@ function outlineHtml(outline) {
  * The launcher demo: a real-geometry 400x300 panel with the firmware's status
  * bar and 3x4 tile grid, driven by the arrow keys like the device is.
  */
-function deviceHtml(apps, icons, lead) {
+function deviceHtml(apps, icons, lead, ids) {
   const tiles = apps
-    .filter((a) => icons.has(a.name.toLowerCase()))
-    .map((a, i) => {
-      const key = a.name.toLowerCase();
-      return `<button class="tile" type="button" data-index="${i}" data-app="${esc(a.name)}" tabindex="-1">
-              <img class="tile-icon" src="assets/icons/${key}.png" alt="" width="32" height="32">
+    .filter((name) => icons.has(name.toLowerCase()))
+    .map((name) => {
+      const key = name.toLowerCase();
+      const anchor = ids.has(slug(name)) ? slug(name) : null;
+      const art = `<img class="tile-icon" src="assets/icons/${key}.png" alt="" width="32" height="32">
               <img class="tile-icon tile-icon-inv" src="assets/icons/${key}-inv.png" alt="" width="32" height="32">
-              <span class="tile-label">${esc(a.name)}</span>
-            </button>`;
+              <span class="tile-label">${esc(name)}</span>`;
+      // No section on the page means the tile does nothing, rather than
+      // pretending to lead somewhere.
+      return anchor
+        ? `<a class="tile" href="#${anchor}" data-app="${esc(name)}" tabindex="-1">
+              ${art}
+            </a>`
+        : `<span class="tile is-inert" data-app="${esc(name)}" aria-hidden="true">
+              ${art}
+            </span>`;
     })
     .join('\n            ');
-
-  const blurbs = apps.map((a) => `<script type="application/json" class="app-blurb" data-app="${esc(a.name)}">${JSON.stringify(a.blurb)}</script>`).join('\n      ');
 
   return `
     <section class="hero">
       <div class="device" id="device" tabindex="0" role="application"
-           aria-label="Interactive launcher demo. Arrow keys move, Enter opens, Escape goes back."
+           aria-label="Launcher demo. Arrow keys move between apps, Enter jumps to that app's section."
            style="--panel-w:${PANEL.w};--panel-h:${PANEL.h}">
         <div class="panel">
           <div class="panel-bar">
@@ -228,11 +222,6 @@ function deviceHtml(apps, icons, lead) {
             <div class="grid" id="tile-grid">
             ${tiles}
             </div>
-            <div class="app-view" id="app-view" hidden>
-              <div class="app-view-title" id="app-view-title"></div>
-              <div class="app-view-text" id="app-view-text"></div>
-              <div class="app-view-hint">[Esc] back</div>
-            </div>
           </div>
         </div>
       </div>
@@ -241,14 +230,13 @@ function deviceHtml(apps, icons, lead) {
         <p class="hero-note">That is the real launcher: the icons are the 1-bit bitmaps
           from <code>src/img_icons.c</code>, the type is PixelOperator at the same
           16&nbsp;px the firmware uses, and the panel is 400&times;300 like the ST7305.</p>
-        <p class="hero-note">Click the screen, then use the <b>arrow keys</b> to move,
-          <b>Enter</b> to open an app, <b>Esc</b> to go back.</p>
+        <p class="hero-note">Click a tile, or click the screen and use the
+          <b>arrow keys</b> and <b>Enter</b>, to jump to that app's section below.</p>
         <div class="hero-links">
           <a class="btn" href="docs/">Documentation</a>
           <a class="btn" href="${SITE.repo}">Source on GitHub</a>
         </div>
       </div>
-      ${blurbs}
     </section>`;
 }
 
@@ -367,7 +355,7 @@ async function main() {
 
   for (const page of PAGES) {
     const md = await fs.readFile(path.join(ROOT, page.src), 'utf8');
-    const { html, outline, title } = renderMarkdown(md, page);
+    const { html, outline, title, ids } = renderMarkdown(md, page);
     for (const ch of substitute(md)) {
       const cp = ch.codePointAt(0);
       if (cp > 0x7e && cp !== 0x0a && !covered.has(cp)) {
@@ -384,7 +372,7 @@ async function main() {
         return '';
       });
     }
-    const hero = page.home ? deviceHtml(apps, icons, lead) : null;
+    const hero = page.home ? deviceHtml(apps, icons, lead, ids) : null;
     const out = path.join(OUT, page.out);
     await fs.mkdir(path.dirname(out), { recursive: true });
     await fs.writeFile(out, shell({ page, title, body, outline, hero }));
