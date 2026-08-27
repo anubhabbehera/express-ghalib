@@ -23,6 +23,24 @@ namespace {
 constexpr const char* kDictPath = "/lexicon/dict.txt";
 constexpr const char* kIdxPath = "/lexicon/dict.idx";
 
+// Both files come off the SD card, i.e. they are arbitrary input. Reading a
+// "line" from one with no newline in it would grow a single String until the
+// heap runs out, so every line read here is capped. Real entries are ~100
+// bytes; anything past the cap is dropped, not buffered.
+constexpr unsigned kMaxLine = 512;
+
+// Bounded replacement for File::readStringUntil('\n').
+String read_line_capped(File& f) {
+  String line;
+  line.reserve(80);
+  while (f.available()) {
+    const char c = (char)f.read();
+    if (c == '\n') break;
+    if (line.length() < kMaxLine) line += c;
+  }
+  return line;
+}
+
 // ---------------------------------------------------------------------------
 // Index + lookup
 // ---------------------------------------------------------------------------
@@ -47,7 +65,7 @@ bool load_idx() {
   File f = SD_MMC.open(kIdxPath, "r");
   if (!f) return false;
   while (f.available()) {
-    String line = f.readStringUntil('\n');
+    String line = read_line_capped(f);
     if (line.length() < 4) continue;
     g_idx.push_back({line[0], line[1],
                      (uint32_t)line.substring(3).toInt()});
@@ -99,7 +117,10 @@ bool lookup(const String& key, std::vector<String>& defs,
     pos += got;
     for (int i = 0; i < got && !done; i++) {
       const char c = (char)buf[i];
-      if (c != '\n') { line += c; continue; }
+      if (c != '\n') {
+        if (line.length() < kMaxLine) line += c;   // cap: see kMaxLine
+        continue;
+      }
       const int tab = line.indexOf('\t');
       if (tab > 0) {
         const String k = line.substring(0, tab);

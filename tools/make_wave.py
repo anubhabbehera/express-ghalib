@@ -11,7 +11,9 @@ Usage: python3 tools/make_wave.py  (writes src/img_wave.c; caches the scan
 in ~/.cache/express-ghalib/)
 """
 import os
+import hashlib
 import subprocess
+import sys
 
 from PIL import Image, ImageOps
 
@@ -20,6 +22,23 @@ URL = ("https://commons.wikimedia.org/wiki/Special:FilePath/"
 CACHE = os.path.expanduser("~/.cache/express-ghalib/wave.jpg")
 OUT = os.path.join(os.path.dirname(__file__), "..", "src", "img_wave.c")
 
+# Checksum of the source image this artwork was generated from. Wikimedia can
+# re-derive a file at the same path; pinning the digest keeps the dither
+# reproducible and catches a substituted download.
+SHA256 = "30c170260de393f51bd592adacc6f0714b60f157c09744e9c5b6d46e6a613718"
+
+
+def verify(path, expected):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != expected:
+        sys.exit(f"checksum mismatch for {path}\n"
+                 f"  expected {expected}\n  got      {h.hexdigest()}\n"
+                 f"Delete the file to re-download.")
+
+
 SMALL = (75, 105)     # dither/threshold resolution
 SCALE = 2             # nearest-neighbour upscale factor
 THRESH = 122
@@ -27,7 +46,9 @@ THRESH = 122
 def main():
     if not os.path.exists(CACHE):
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-        subprocess.run(["curl", "-fL", "-o", CACHE, URL], check=True)
+        subprocess.run(["curl", "-fL", "-o", CACHE + ".part", URL], check=True)
+        os.rename(CACHE + ".part", CACHE)
+    verify(CACHE, SHA256)
 
     im = Image.open(CACHE).convert("L")
     W, H = im.size

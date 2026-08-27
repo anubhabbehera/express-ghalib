@@ -96,6 +96,15 @@ bool parse_wav(File& f, WavInfo& w) {
       f.read((uint8_t*)&blk, 2); f.read((uint8_t*)&bits, 2);
       if (sz > 16) f.seek(f.position() + (sz - 16));
       if (fmt != 1) { Serial.printf("[MUS] WAV not PCM (fmt=%u)\n", fmt); return false; }
+      // Sanity-check the header before it reaches the I2S config: files on the
+      // SD card are arbitrary input, and a bogus rate/channel count would
+      // either fail the I2S re-init (leaving playback at the previous rate) or
+      // stream frames the mono/stereo path can't interpret.
+      if (sr < 8000 || sr > 48000 || (ch != 1 && ch != 2)) {
+        Serial.printf("[MUS] WAV rate/channels out of range (%lu Hz, %u ch)\n",
+                      (unsigned long)sr, ch);
+        return false;
+      }
       w.rate = sr; w.channels = ch; w.bits = bits;
       have_fmt = true;
     } else if (!memcmp(tag, "data", 4)) {
