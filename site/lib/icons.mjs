@@ -34,18 +34,23 @@ function chunk(type, data) {
   return out;
 }
 
-/** Encodes an 8-bit greyscale bitmap (one byte per pixel) as a PNG. */
+/**
+ * Encodes a greyscale + alpha bitmap as a PNG: two bytes per pixel, value then
+ * alpha. The icons' background must be transparent, not white, so a tile shows
+ * the panel ground behind the art the way the device does.
+ */
 function encodePng(width, height, pixels) {
-  const raw = Buffer.alloc((width + 1) * height);
+  const rowBytes = width * 2;
+  const raw = Buffer.alloc((rowBytes + 1) * height);
   for (let y = 0; y < height; y++) {
-    raw[y * (width + 1)] = 0; // filter: none
-    pixels.copy(raw, y * (width + 1) + 1, y * width, (y + 1) * width);
+    raw[y * (rowBytes + 1)] = 0; // filter: none
+    pixels.copy(raw, y * (rowBytes + 1) + 1, y * rowBytes, (y + 1) * rowBytes);
   }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8; // bit depth
-  ihdr[9] = 0; // colour type: greyscale
+  ihdr[9] = 4; // colour type: greyscale + alpha
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
@@ -84,11 +89,14 @@ export async function decodeIcons(sourcePath) {
     const palette = [data[0], data[4]]; // blue channel is enough for 1-bit art
     const bitmap = data.subarray(8);
     const stride = Math.ceil(w / 8);
-    const pixels = Buffer.alloc(w * h);
+    // Index 0 is the background the icon was drawn on; it becomes transparent.
+    const pixels = Buffer.alloc(w * h * 2);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const bit = (bitmap[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1;
-        pixels[y * w + x] = palette[bit];
+        const at = (y * w + x) * 2;
+        pixels[at] = palette[bit];
+        pixels[at + 1] = bit ? 255 : 0;
       }
     }
 
