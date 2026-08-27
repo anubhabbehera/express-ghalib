@@ -1,12 +1,43 @@
+# --- build output ---
 .pio/
-.vscode/
-!.vscode/extensions.json
+build/
+out/
 *.bin
 *.elf
-__pycache__/
+*.map
+*.coredump
 
-# Local agent/editor config (personal prefs + machine-specific paths)
+# --- editor / OS ---
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+*~
+
+# --- local agent / assistant config (personal prefs, machine paths) ---
 .claude/
+CLAUDE.local.md
 
-# Adversarial perf review findings (local, not tracked)
+# --- python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.cache/
+
+# --- secrets: never commit credentials to this repo ---
+# Wi-Fi credentials live in NVS on the device, set from the Settings app.
+.env
+.env.*
+secrets.h
+credentials.h
+wifi_secrets.h
+*.pem
+*.key
+id_rsa*
+
+# --- local notes / captures ---
 perf-review/
+*.log
+serial-*.txt
