@@ -1,0 +1,94 @@
+# Builds site/ and publishes it to GitHub Pages.
+#
+# Security posture (see CONTRIBUTING.md):
+#   - `pull_request`, never `pull_request_target`/`workflow_run`: a fork's code
+#     is built with a read-only token in the fork's context, with no secrets.
+#     Fork runs also need manual approval (repository Actions policy).
+#   - top-level `permissions: {}`: every job starts with no token scopes and
+#     asks for exactly what it needs.
+#   - every action is a GitHub-owned action pinned to a full commit SHA.
+#   - the build job never gets `pages: write`; only the deploy job does, and
+#     deploy is skipped entirely for pull requests.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/**
+      - site/**
+      - src/img_icons.c
+      - tools/fonts/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - README.md
+      - docs/**
+      - site/**
+      - src/img_icons.c
+      - tools/fonts/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions: {}
+
+# One deploy at a time, and never cancel one half-way: an interrupted Pages
+# deployment leaves the site on the previous version at best.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      # --ignore-scripts: no dependency lifecycle script runs on CI.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # --strict fails the build on any character PixelOperator cannot draw,
+      # rather than shipping a page that falls back to a system font.
+      - name: Build
+        run: npm run site:build -- --strict
+
+      - name: Check links and assets
+        run: npm run site:check
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    # Pull requests build and are checked, but never publish.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

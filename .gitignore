@@ -40,6 +40,7 @@ id_rsa*
 # --- documentation site (site/, built by `npm run site:build`) ---
 node_modules/
 _site/
+_site.tmp/
 
 # --- local notes / captures ---
 perf-review/
