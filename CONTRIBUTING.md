@@ -19,15 +19,17 @@ issue first so neither of us wastes an afternoon.
 
 ## Pull requests from forks
 
-There is no CI on this repository today. If workflows are added later, they run
-against fork pull requests **only after manual approval**, and they never get
-access to repository secrets. Do not add a workflow that uses
-`pull_request_target`, `workflow_run`, or `issue_comment` to build or execute
-code from a pull request branch — those triggers run with a writable token in
-the base repository's context and turn any fork PR into arbitrary code
-execution. Use `pull_request`.
+The only workflow here is `.github/workflows/pages.yml`, which builds the
+documentation site. Against a fork pull request it runs **only after manual
+approval**, with a read-only token, in the fork's context, with no access to
+repository secrets, and it never reaches the deploy job.
 
-If you do add a workflow:
+Do not add a workflow that uses `pull_request_target`, `workflow_run`, or
+`issue_comment` to build or execute code from a pull request branch — those
+triggers run with a writable token in the base repository's context and turn any
+fork PR into arbitrary code execution. Use `pull_request`.
+
+If you add a workflow:
 
 - set a minimal top-level `permissions:` block (`contents: read` unless more is
   genuinely needed);

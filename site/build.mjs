@@ -19,6 +19,13 @@ import { fontCoverage } from './lib/font.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, '_site');
+// Built into a staging directory and swapped in at the end, so `site:serve
+// --watch` never serves (and `site:check` never inspects) a half-written tree.
+const STAGE = path.join(ROOT, '_site.tmp');
+
+// --strict turns the glyph-coverage warning into a build failure. CI uses it so
+// a stray character can never reach the published site in a fallback font.
+const STRICT = process.argv.includes('--strict');
 
 const SITE = {
   title: 'express-ghalib',
@@ -70,13 +77,19 @@ const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, 
 
 const stripTags = (s) => s.replace(/<[^>]+>/g, '');
 
+/**
+ * GitHub's heading-anchor algorithm, so links written for the markdown on
+ * GitHub (`#direct_mode-is-on-deliberately`, `#8-power--deep-sleep`) resolve to
+ * the same ids here: strip punctuation but keep underscores, then turn each
+ * remaining whitespace character into its own hyphen.
+ */
 function slug(text) {
   return stripTags(text)
     .toLowerCase()
     .replace(/&[a-z]+;/g, '')
-    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/[^a-z0-9\s_-]/g, '')
     .trim()
-    .replace(/\s+/g, '-');
+    .replace(/\s/g, '-');
 }
 
 function substitute(text) {
@@ -327,22 +340,22 @@ async function copyDir(from, to) {
 }
 
 async function main() {
-  await fs.rm(OUT, { recursive: true, force: true });
-  await fs.mkdir(OUT, { recursive: true });
+  await fs.rm(STAGE, { recursive: true, force: true });
+  await fs.mkdir(STAGE, { recursive: true });
 
   // Assets: stylesheet, script, fonts, launcher icons.
-  await fs.mkdir(path.join(OUT, 'assets/fonts'), { recursive: true });
-  await fs.mkdir(path.join(OUT, 'assets/icons'), { recursive: true });
-  await fs.copyFile(path.join(ROOT, 'site/assets/rlcd.css'), path.join(OUT, 'assets/rlcd.css'));
-  await fs.copyFile(path.join(ROOT, 'site/assets/site.js'), path.join(OUT, 'assets/site.js'));
+  await fs.mkdir(path.join(STAGE, 'assets/fonts'), { recursive: true });
+  await fs.mkdir(path.join(STAGE, 'assets/icons'), { recursive: true });
+  await fs.copyFile(path.join(ROOT, 'site/assets/rlcd.css'), path.join(STAGE, 'assets/rlcd.css'));
+  await fs.copyFile(path.join(ROOT, 'site/assets/site.js'), path.join(STAGE, 'assets/site.js'));
   for (const font of FONTS) {
-    await fs.copyFile(path.join(ROOT, 'tools/fonts', font), path.join(OUT, 'assets/fonts', font));
+    await fs.copyFile(path.join(ROOT, 'tools/fonts', font), path.join(STAGE, 'assets/fonts', font));
   }
 
   const icons = await decodeIcons(path.join(ROOT, 'src/img_icons.c'));
   for (const [name, variants] of icons) {
-    await fs.writeFile(path.join(OUT, 'assets/icons', `${name}.png`), variants.normal);
-    await fs.writeFile(path.join(OUT, 'assets/icons', `${name}-inv.png`), variants.inverted);
+    await fs.writeFile(path.join(STAGE, 'assets/icons', `${name}.png`), variants.normal);
+    await fs.writeFile(path.join(STAGE, 'assets/icons', `${name}-inv.png`), variants.inverted);
   }
 
   const readme = await fs.readFile(path.join(ROOT, 'README.md'), 'utf8');
@@ -373,23 +386,37 @@ async function main() {
       });
     }
     const hero = page.home ? deviceHtml(apps, icons, lead, ids) : null;
-    const out = path.join(OUT, page.out);
+    const out = path.join(STAGE, page.out);
     await fs.mkdir(path.dirname(out), { recursive: true });
     await fs.writeFile(out, shell({ page, title, body, outline, hero }));
   }
 
-  // Jekyll would otherwise eat the _-prefixed paths GitHub Pages sees.
-  await fs.writeFile(path.join(OUT, '.nojekyll'), '');
-
-  const pageCount = PAGES.length;
-  console.log(`built ${pageCount} pages, ${icons.size * 2} icons -> _site/`);
+  // A page that needs a glyph PixelOperator lacks must not replace a good
+  // build, so this is checked before the staging directory is swapped in.
   if (missing.size) {
     const list = [...missing.entries()]
       .map(([ch, n]) => `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')} (${n}x)`)
       .join(', ');
-    console.warn(`warning: characters not in PixelOperator, they will fall back to a system font: ${list}`);
-    console.warn('add a rewrite to SUBSTITUTIONS in site/build.mjs');
+    const message = `characters not in PixelOperator, they would fall back to a system font: ${list}`;
+    const hint = 'add a rewrite to SUBSTITUTIONS in site/build.mjs';
+    if (STRICT) {
+      console.error(`error: ${message}`);
+      console.error(hint);
+      await fs.rm(STAGE, { recursive: true, force: true });
+      process.exitCode = 1;
+      return;
+    }
+    console.warn(`warning: ${message}`);
+    console.warn(hint);
   }
+
+  // Jekyll would otherwise eat the _-prefixed paths GitHub Pages sees.
+  await fs.writeFile(path.join(STAGE, '.nojekyll'), '');
+
+  await fs.rm(OUT, { recursive: true, force: true });
+  await fs.rename(STAGE, OUT);
+
+  console.log(`built ${PAGES.length} pages, ${icons.size * 2} icons -> _site/`);
 }
 
 main().catch((err) => {

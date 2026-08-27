@@ -360,6 +360,7 @@ src/                 Firmware (one .cpp/.h pair per subsystem/app)
 include/lv_conf.h    LVGL configuration (1-bit, mono theme, tuned read period)
 tools/               make_icons.py, make_wave.py, build_lexicon.py, capture.py …
 docs/                Technical documentation (see below)
+site/                Documentation website generator (see below)
 partitions_16MB.csv  Flash layout (dual OTA + coredump + LittleFS)
 platformio.ini       Board, platform, build flags, libraries
 PLAN.md              Milestone plan and running history
@@ -379,6 +380,24 @@ firmware, and especially before touching the render path or the power model.
 | **[docs/performance.md](docs/performance.md)** | The optimization playbook: what's fast, what's slow, and every technique used to keep a 240 MHz dual-core responsive on a slow panel — plus the adversarial perf-review method |
 | **[docs/hardware.md](docs/hardware.md)** | Full pin map, peripherals, non-obvious hardware facts, and the flash partition layout |
 | **[docs/build-flash-debug.md](docs/build-flash-debug.md)** | Toolchain, USB-OTG flashing, non-interactive serial capture, and decoding crash coredumps |
+
+### The website
+
+The same markdown is published at
+**[anubhabbehera.github.io/express-ghalib](https://anubhabbehera.github.io/express-ghalib/)**,
+rendered to look like the device: PixelOperator at the size the firmware draws
+it, the launcher icons decoded straight out of `src/img_icons.c`, and the panel's
+two-colour palette. `site/build.mjs` generates it; `.github/workflows/pages.yml`
+publishes `main`.
+
+```sh
+npm install
+npm run site:serve -- --watch     # http://localhost:4200, rebuilds on save
+npm run site:verify               # what CI runs: strict build + link check
+```
+
+The build fails on any character PixelOperator cannot draw, so nothing on the
+site silently falls back to a system font.
 
 ---
 

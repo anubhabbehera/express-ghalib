@@ -7,7 +7,9 @@
   "type": "module",
   "scripts": {
     "site:build": "node site/build.mjs",
-    "site:serve": "node site/serve.mjs"
+    "site:check": "node site/check.mjs",
+    "site:serve": "node site/serve.mjs",
+    "site:verify": "node site/build.mjs --strict && node site/check.mjs"
   },
   "devDependencies": {
     "marked": "^16.0.0"
