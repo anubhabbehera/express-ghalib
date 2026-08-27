@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # No workflows exist yet. When one is added, this keeps its SHA-pinned action
+  # references moving forward instead of rotting at a pinned commit.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
