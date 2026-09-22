@@ -77,6 +77,11 @@ const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, 
 
 const stripTags = (s) => s.replace(/<[^>]+>/g, '');
 
+/** Heading HTML -> plain text, entities decoded so esc() does not double them. */
+const plainText = (s) => stripTags(s)
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/&amp;/g, '&');
+
 /**
  * GitHub's heading-anchor algorithm, so links written for the markdown on
  * GitHub (`#direct_mode-is-on-deliberately`, `#8-power--deep-sleep`) resolve to
@@ -139,7 +144,10 @@ function renderMarkdown(md, page) {
     const id = slug(inner);
     const depth = Number(level);
     ids.add(id);
-    if (depth === 2 || depth === 3) outline.push({ id, depth, text: stripTags(inner) });
+    if (depth === 2 || depth === 3) outline.push({ id, depth, text: plainText(inner) });
+    // The h1 becomes the page header below; a permalink there would leak its
+    // "#" into the title.
+    if (depth === 1) return `<h1 id="${id}">${inner}</h1>`;
     return `<h${level} id="${id}"><a class="anchor" href="#${id}" aria-label="Link to this section">#</a>${inner}</h${level}>`;
   });
 
@@ -152,7 +160,7 @@ function renderMarkdown(md, page) {
   // The first h1 becomes the page header, not body content.
   let title = SITE.title;
   html = html.replace(/<h1[^>]*>([\s\S]*?)<\/h1>\n?/, (_m, inner) => {
-    title = stripTags(inner);
+    title = plainText(inner);
     return '';
   });
 
@@ -188,10 +196,12 @@ function outlineHtml(outline) {
     .join('\n          ');
   return `
       <nav class="toc" aria-label="On this page">
-        <div class="toc-title">Contents</div>
-        <div class="toc-list">
-          ${items}
-        </div>
+        <details class="toc-box" open>
+          <summary class="toc-title">Contents</summary>
+          <div class="toc-list">
+            ${items}
+          </div>
+        </details>
       </nav>`;
 }
 
@@ -243,8 +253,9 @@ function deviceHtml(apps, icons, lead, ids) {
         <p class="hero-note">That is the real launcher: the icons are the 1-bit bitmaps
           from <code>src/img_icons.c</code>, the type is PixelOperator at the same
           16&nbsp;px the firmware uses, and the panel is 400&times;300 like the ST7305.</p>
-        <p class="hero-note">Click a tile, or click the screen and use the
+        <p class="hero-note only-kbd">Click a tile, or click the screen and use the
           <b>arrow keys</b> and <b>Enter</b>, to jump to that app's section below.</p>
+        <p class="hero-note only-touch">Tap a tile to jump to that app's section below.</p>
         <div class="hero-links">
           <a class="btn" href="docs/">Documentation</a>
           <a class="btn" href="${SITE.repo}">Source on GitHub</a>
@@ -264,6 +275,7 @@ function shell({ page, title, body, outline, hero }) {
 <title>${esc(page.home ? SITE.title : `${title} · ${SITE.title}`)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="color-scheme" content="light">
+<meta name="theme-color" content="#b9c0b1">
 <meta property="og:title" content="${esc(page.home ? SITE.title : `${title} · ${SITE.title}`)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="website">
@@ -296,11 +308,11 @@ function shell({ page, title, body, outline, hero }) {
 
 <footer class="hintbar">
   <div class="hintbar-inner">
-    <span class="hint"><b>[Up/Dn]</b> scroll</span>
-    <span class="hint"><b>[D]</b> docs</span>
-    <span class="hint"><b>[H]</b> home</span>
+    <span class="hint hint-kbd"><b>[Up/Dn]</b> scroll</span>
+    <span class="hint hint-kbd"><b>[D]</b> docs</span>
+    <span class="hint hint-kbd"><b>[H]</b> home</span>
     <span class="hint"><button class="hint-btn" type="button" data-action="text-down"><b>[-]</b></button><button class="hint-btn" type="button" data-action="text-up"><b>[+]</b></button> text size</span>
-    <span class="hint"><button class="hint-btn" type="button" data-action="keys"><b>[?]</b></button> keys</span>
+    <span class="hint hint-kbd"><button class="hint-btn" type="button" data-action="keys"><b>[?]</b></button> keys</span>
     <span class="hint hint-repo"><a href="${SITE.repo}">github</a></span>
   </div>
 </footer>

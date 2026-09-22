@@ -55,7 +55,12 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html { background: var(--bezel); }
+html {
+  background: var(--bezel);
+  /* iOS inflates text in landscape otherwise, which breaks the 16 px grid. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
@@ -68,6 +73,7 @@ body {
   font-smooth: never;
   text-rendering: optimizeSpeed;
   padding-bottom: 40px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 img { image-rendering: pixelated; }
@@ -146,6 +152,7 @@ button:focus-visible,
 /* --- hero / device ------------------------------------------------------- */
 
 .hero {
+  container-type: inline-size;
   display: grid;
   grid-template-columns: auto minmax(280px, 1fr);
   gap: 32px;
@@ -156,10 +163,15 @@ button:focus-visible,
 }
 
 .device {
-  --pw: calc(var(--panel-w) * var(--u) * 1px);
-  --ph: calc(var(--panel-h) * var(--u) * 1px);
-  width: calc(var(--pw) + 24px);
-  padding: 12px;
+  /* One panel pixel in CSS px: the --u scale, shrunk (never grown) so the
+     whole bezel fits the column on a phone. Length / number is plain calc, so
+     this needs no script. */
+  --bezel-pad: 12px;
+  --px: min(calc(var(--u) * 1px), calc((100cqw - 2 * var(--bezel-pad) - 2px) / var(--panel-w)));
+  --pw: calc(var(--panel-w) * var(--px));
+  --ph: calc(var(--panel-h) * var(--px));
+  width: calc(var(--pw) + 2 * var(--bezel-pad) + 2px);
+  padding: var(--bezel-pad);
   background: var(--bezel);
   border: 1px solid var(--bezel-edge);
   border-radius: 6px;
@@ -173,7 +185,7 @@ button:focus-visible,
   height: var(--ph);
   background: var(--ground-lit);
   overflow: hidden;
-  font-size: calc(16px * var(--u));
+  font-size: calc(16 * var(--px));
   line-height: 1;
 }
 /* The pixel grid a reflective LCD shows under a raking light. */
@@ -183,16 +195,16 @@ button:focus-visible,
   inset: 0;
   pointer-events: none;
   background-image:
-    repeating-linear-gradient(to right, rgba(18, 21, 15, 0.06) 0 1px, transparent 1px calc(var(--u) * 1px)),
-    repeating-linear-gradient(to bottom, rgba(18, 21, 15, 0.06) 0 1px, transparent 1px calc(var(--u) * 1px));
+    repeating-linear-gradient(to right, rgba(18, 21, 15, 0.06) 0 1px, transparent 1px var(--px)),
+    repeating-linear-gradient(to bottom, rgba(18, 21, 15, 0.06) 0 1px, transparent 1px var(--px));
 }
 
 .panel-bar {
   display: flex;
   align-items: center;
-  height: calc(34px * var(--u));
-  padding: 0 calc(12px * var(--u));
-  gap: calc(8px * var(--u));
+  height: calc(34 * var(--px));
+  padding: 0 calc(12 * var(--px));
+  gap: calc(8 * var(--px));
 }
 .bar-wordmark { white-space: nowrap; }
 .bar-clock {
@@ -202,13 +214,13 @@ button:focus-visible,
 }
 .bar-right {
   display: flex;
-  gap: calc(6px * var(--u));
+  gap: calc(6 * var(--px));
   margin-left: auto;
 }
 
 .panel-body {
-  height: calc((var(--panel-h) - 34) * var(--u) * 1px);
-  padding: calc(10px * var(--u));
+  height: calc((var(--panel-h) - 34) * var(--px));
+  padding: calc(10 * var(--px));
 }
 
 .grid {
@@ -216,7 +228,7 @@ button:focus-visible,
   flex-wrap: wrap;
   align-content: center;
   justify-content: center;
-  gap: calc(8px * var(--u)) calc(6px * var(--u));
+  gap: calc(8 * var(--px)) calc(6 * var(--px));
   height: 100%;
 }
 .tile {
@@ -224,20 +236,20 @@ button:focus-visible,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(4px * var(--u));
-  width: calc(88px * var(--u));
-  height: calc(76px * var(--u));
-  padding: calc(6px * var(--u));
+  gap: calc(4 * var(--px));
+  width: calc(88 * var(--px));
+  height: calc(76 * var(--px));
+  padding: calc(6 * var(--px));
   background: transparent;
   color: var(--ink);
   border: 1px solid var(--ink);
-  border-radius: calc(8px * var(--u));
+  border-radius: calc(8 * var(--px));
   font: inherit;
   cursor: pointer;
 }
 .tile-icon {
-  width: calc(32px * var(--u));
-  height: calc(32px * var(--u));
+  width: calc(32 * var(--px));
+  height: calc(32 * var(--px));
 }
 .tile-icon-inv { display: none; }
 .tile-label { white-space: nowrap; }
@@ -252,12 +264,12 @@ button:focus-visible,
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: calc(8px * var(--u));
+  gap: calc(8 * var(--px));
 }
 .app-view-title {
   font-weight: 700;
   border-bottom: 1px solid var(--ink);
-  padding-bottom: calc(4px * var(--u));
+  padding-bottom: calc(4 * var(--px));
 }
 .app-view-text {
   flex: 1;
@@ -310,7 +322,13 @@ button:focus-visible,
   border-bottom: 1px solid var(--ink);
   margin-bottom: 6px;
   padding-bottom: 4px;
+  list-style: none;
+  cursor: pointer;
 }
+.toc-title::-webkit-details-marker { display: none; }
+.toc-title::after { content: ' [-]'; }
+.toc-box:not([open]) > .toc-title { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.toc-box:not([open]) > .toc-title::after { content: ' [+]'; }
 .toc-list { display: flex; flex-direction: column; }
 .toc-item {
   text-decoration: none;
@@ -441,6 +459,7 @@ th {
   white-space: nowrap;
 }
 .hint-repo { margin-left: auto; }
+.hintbar { padding-bottom: env(safe-area-inset-bottom); }
 
 /* --- keys overlay -------------------------------------------------------- */
 
@@ -459,7 +478,8 @@ th {
   background: var(--ground);
   border: 1px solid var(--ink);
   padding: 16px;
-  min-width: 320px;
+  min-width: min(320px, 100vw - 24px);
+  max-width: calc(100vw - 24px);
 }
 .overlay-title {
   font-weight: 700;
@@ -481,7 +501,58 @@ th {
 
 @media (max-width: 880px) {
   :root { --u: 1; }
-  .device { width: calc(var(--pw) + 24px); max-width: 100%; }
+}
+
+/* Phones: the status bar becomes two rows (name + clock, then a nav strip
+   that scrolls sideways) instead of a sticky block of wrapped links. */
+@media (max-width: 640px) {
+  .statusbar-inner {
+    flex-wrap: wrap;
+    gap: 0 16px;
+    padding: 0;
+  }
+  .wordmark, .clock { padding: 4px 0 4px 12px; }
+  .clock { margin-left: auto; padding-right: 12px; }
+  .nav {
+    position: relative;
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    margin-left: 0;
+    padding: 0 12px;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-top: 1px solid var(--ink);
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-item {
+    flex: none;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+  :root { --bar: 72px; }
+
+  .hero { gap: 20px; padding-top: 16px; }
+  .device { --bezel-pad: 8px; justify-self: center; }
+  .hero-tagline { font-size: calc(var(--text) * 1.5); }
+  .page-inner { gap: 20px; padding-top: 16px; }
+  .page-title { font-size: calc(var(--text) * 1.5); }
+  .prose h2 { font-size: calc(var(--text) * 1.25); margin-top: 32px; }
+  .anchor { display: none; }
+}
+
+/* Touch screens have no keyboard to drive the shortcuts, so only the
+   controls a finger can use stay in the hint bar, sized for a finger. */
+.only-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .only-kbd, .hint-kbd { display: none; }
+  .only-touch { display: block; }
+  .hintbar-inner { align-items: center; padding-top: 0; padding-bottom: 0; }
+  .hint-btn { min-width: 44px; min-height: 44px; }
+  .hint-repo a { display: inline-block; padding: 12px 0; }
+  .toc-item { padding-top: 6px; padding-bottom: 6px; }
+  .btn { padding: 10px 14px; }
+  body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

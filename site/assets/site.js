@@ -73,23 +73,14 @@
     var device = document.getElementById('device');
     if (!device) return;
 
+    // Inert tiles (no section on the page) take part in the grid layout but
+    // are skipped by the cursor.
     var tiles = Array.prototype.slice.call(device.querySelectorAll('.tile'));
     if (!tiles.length) return;
-
-    var grid = document.getElementById('tile-grid');
-    var view = document.getElementById('app-view');
-    var viewTitle = document.getElementById('app-view-title');
-    var viewText = document.getElementById('app-view-text');
-    var focused = 0;
-    var open = false;
-
-    var blurbs = {};
-    document.querySelectorAll('.app-blurb').forEach(function (node) {
-      try { blurbs[node.dataset.app] = JSON.parse(node.textContent); } catch (e) { /* ignore */ }
-    });
+    var focused = Math.max(0, tiles.findIndex(function (t) { return !t.classList.contains('is-inert'); }));
 
     function paintFocus() {
-      tiles.forEach(function (tile, i) { tile.classList.toggle('is-focused', i === focused && !open); });
+      tiles.forEach(function (tile, i) { tile.classList.toggle('is-focused', i === focused); });
     }
 
     /** Tiles per row, read back from the flex layout rather than assumed. */
@@ -105,50 +96,29 @@
       paintFocus();
     }
 
-    function openApp(index) {
-      var name = tiles[index].dataset.app;
-      open = true;
-      viewTitle.textContent = name;
-      viewText.textContent = blurbs[name] || '';
-      view.hidden = false;
-      grid.hidden = true;
-      paintFocus();
-    }
-
-    function closeApp() {
-      open = false;
-      view.hidden = true;
-      grid.hidden = false;
-      paintFocus();
-    }
-
     device.addEventListener('focus', function () { device.classList.add('is-active'); });
     device.addEventListener('blur', function () { device.classList.remove('is-active'); });
 
     tiles.forEach(function (tile, i) {
-      tile.addEventListener('click', function () {
-        device.focus();
-        focused = i;
-        openApp(i);
-      });
-      tile.addEventListener('mouseenter', function () {
-        if (!open) { focused = i; paintFocus(); }
+      // A tile is a plain link: a click or tap follows it with no help. Only a
+      // pointer that can hover moves the cursor, so a tap does not leave a
+      // tile inverted behind it.
+      tile.addEventListener('pointerenter', function (ev) {
+        if (ev.pointerType === 'mouse') { focused = i; paintFocus(); }
       });
     });
 
     device.addEventListener('keydown', function (ev) {
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      var key = ev.key;
-      if (open) {
-        if (key === 'Escape' || key === 'Backspace') { ev.preventDefault(); closeApp(); }
-        return;
-      }
-      switch (key) {
+      switch (ev.key) {
         case 'ArrowLeft': ev.preventDefault(); move(-1); break;
         case 'ArrowRight': ev.preventDefault(); move(1); break;
         case 'ArrowUp': ev.preventDefault(); move(-rowLength()); break;
         case 'ArrowDown': ev.preventDefault(); move(rowLength()); break;
-        case 'Enter': ev.preventDefault(); openApp(focused); break;
+        case 'Enter':
+          ev.preventDefault();
+          if (tiles[focused].href) tiles[focused].click();
+          break;
         case 'Escape': device.blur(); break;
         default: break;
       }
@@ -157,9 +127,24 @@
     paintFocus();
   }
 
+  // --- section nav -------------------------------------------------------
+
+  /** On a phone the nav is a sideways strip; start it with this page in view. */
+  function revealCurrentNav() {
+    var nav = document.querySelector('.nav');
+    var current = nav && nav.querySelector('.is-current');
+    if (!current || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
+  }
+
   // --- table of contents highlight ----------------------------------------
 
   function initToc() {
+    // On a single-column layout the contents box sits above the article, so
+    // it starts folded rather than pushing the text a screen down.
+    var box = document.querySelector('.toc-box');
+    if (box && window.matchMedia('(max-width: 1000px)').matches) box.open = false;
+
     var items = Array.prototype.slice.call(document.querySelectorAll('.toc-item'));
     if (!items.length || !('IntersectionObserver' in window)) return;
 
@@ -239,6 +224,7 @@
   startClock();
   paintBattery();
   initDevice();
+  revealCurrentNav();
   initToc();
   initKeys();
 })();
