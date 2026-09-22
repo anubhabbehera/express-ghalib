@@ -12,6 +12,6 @@
     "site:verify": "node site/build.mjs --strict && node site/check.mjs"
   },
   "devDependencies": {
-    "marked": "^16.0.0"
+    "marked": "^18.0.11"
   }
 }
